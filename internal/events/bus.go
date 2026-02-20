@@ -51,20 +51,12 @@ type Handler func(ctx context.Context, eventType string, payload EventPayload) e
 type Bus struct {
 	mu       sync.RWMutex
 	handlers map[string][]Handler
-	logger   interface {
-		Debug(string, ...interface{})
-		Info(string, ...interface{})
-	}
 }
 
 // NewBus creates new event bus
-func NewBus(logger interface {
-	Debug(string, ...interface{})
-	Info(string, ...interface{})
-}) *Bus {
+func NewBus() *Bus {
 	return &Bus{
 		handlers: make(map[string][]Handler),
-		logger:   logger,
 	}
 }
 
@@ -84,11 +76,7 @@ func (b *Bus) Publish(ctx context.Context, eventType string, payload EventPayloa
 
 	for _, h := range handlers {
 		go func(handler Handler) {
-			if err := handler(ctx, eventType, payload); err != nil {
-				if b.logger != nil {
-					b.logger.Info("Event handler error: %v", err)
-				}
-			}
+			_ = handler(ctx, eventType, payload)
 		}(h)
 	}
 }

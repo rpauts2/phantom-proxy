@@ -71,3 +71,47 @@ log_level: "info"
 domain_rotation_enabled: false
 domain_rotation_interval: 60  # минут
 domains: []
+
+# PhantomProxy v13
+v13:
+  c2:
+    sliver:
+      enabled: false
+      server_url: ""
+      operator_token: ""
+      callback_host: ""
+    http_callback:
+      enabled: false
+      callback_url: ""
+      headers: []
+    dns_tunnel:
+      enabled: false
+      domain: ""
+      chunk_size: 60
+  credential_stuffing:
+    enabled: false
+    targets: []
+    rate_limit: 10
+  hibp:
+    enabled: false
+    api_key: ""
+  payload:
+    enabled: false
+    msfvenom_path: "msfvenom"
+    output_dir: "./payloads"
+  evasion:
+    sleep_obfuscation: false
+    sandbox_evasion: false
+    amsi_bypass: false
+    etw_patch: false
+    process_injection: "none"
+  exfiltration:
+    enabled: false
+    target_types: [".docx", ".xlsx", ".pdf"]
+    max_size_mb: 10
+    cloud_provider: ""
+  social_engineering:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    rate_limit: 5

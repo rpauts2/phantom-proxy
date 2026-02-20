@@ -1,53 +1,174 @@
-<!-- Thank you for contributing to PhantomProxy Pro! -->
+# Pull Request Template
 
 ## Description
 
-<!--- Describe your changes in detail -->
+<!-- Provide a detailed description of your changes -->
 
-## Related Issue
+**Related Issue:** Fixes #
 
-<!--- This project only accepts pull requests related to open issues -->
-<!--- If suggesting a new feature or change, please discuss it in an issue first -->
-<!--- If fixing a bug, there should be an issue describing it with steps to reproduce -->
-<!--- Please link to the issue here: -->
+---
 
-Fixes # (issue)
+## Type of Change
 
-## Motivation and Context
+<!-- Select one and delete others -->
 
-<!--- Why is this change required? What problem does it solve? -->
-<!--- If it fixes an open issue, please link to the issue here. -->
+- [ ] 🐛 Bug fix (non-breaking change that fixes an issue)
+- [ ] ✨ New feature (non-breaking change that adds functionality)
+- [ ] 💥 Breaking change (fix or feature that would cause existing functionality to change)
+- [ ] 📝 Documentation update
+- [ ] 🎨 Style/formatting changes
+- [ ] ♻️ Code refactoring
+- [ ] ⚡ Performance improvement
+- [ ] 🧪 Test addition/update
+- [ ] 🔒 Security fix
+- [ ] 🚀 Deployment/CI/CD update
+- [ ] 🔧 Configuration change
+- [ ] 📦 Dependency update
+- [ ] 🌐 Internationalization
+- [ ] 📈 Analytics/telemetry
 
-## How Has This Been Tested?
+---
 
-<!--- Please describe in detail how you tested your changes. -->
-<!--- Include details of your testing environment, and the tests you ran to -->
-<!--- see how your change affects other areas of the code, etc. -->
+## Testing
 
-## Screenshots (if appropriate):
+### Tests Performed
 
-## Types of changes
+- [ ] Unit tests added/updated
+- [ ] Integration tests added/updated
+- [ ] Manual testing performed
+- [ ] All existing tests pass
 
-<!--- What types of changes does your code introduce? Put an `x` in all the boxes that apply: -->
+### Test Evidence
 
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] Documentation update
+<!-- Provide screenshots, logs, or other evidence of testing -->
 
-## Checklist:
+```
+Paste logs or describe test results here
+```
 
-<!--- Go over all the following points, and put an `x` in all the boxes that apply. -->
-<!--- If you're unsure about any of these, don't hesitate to ask. We're here to help! -->
+---
 
-- [ ] My code follows the code style of this project.
-- [ ] My change requires a change to the documentation.
-- [ ] I have updated the documentation accordingly.
-- [ ] I have read the **CONTRIBUTING** document.
-- [ ] I have added tests to cover my changes.
-- [ ] All new and existing tests passed.
-- [ ] I have reviewed the [Ethical Boundaries](docs/ETHICAL_BOUNDARIES.md)
+## Code Quality
 
-## Additional Notes
+- [ ] Code follows project style guidelines
+- [ ] Self-review completed
+- [ ] Code is properly commented
+- [ ] No new warnings introduced
+- [ ] No sensitive data exposed
+- [ ] No hardcoded values (using config/env)
 
-<!--- Add any additional notes or context here -->
+### Linting
+
+```bash
+# Python
+black .
+flake8 .
+mypy .
+
+# Go
+go fmt ./...
+go vet ./...
+```
+
+- [ ] Code passes linters
+
+---
+
+## Documentation
+
+- [ ] README.md updated (if applicable)
+- [ ] CHANGELOG.md updated
+- [ ] Code comments added where needed
+- [ ] API documentation updated (if applicable)
+- [ ] User documentation updated (if applicable)
+
+---
+
+## Security Checklist
+
+- [ ] No new security vulnerabilities introduced
+- [ ] Input validation implemented
+- [ ] Authentication/authorization checked
+- [ ] No secrets or credentials in code
+- [ ] SQL injection prevention (if applicable)
+- [ ] XSS prevention (if applicable)
+- [ ] CSRF protection (if applicable)
+
+---
+
+## Performance
+
+- [ ] No performance regression
+- [ ] Memory usage optimized
+- [ ] Database queries optimized
+- [ ] Caching implemented where appropriate
+
+### Benchmarks
+
+<!-- If applicable, provide before/after benchmarks -->
+
+```
+Before: 
+After: 
+```
+
+---
+
+## Screenshots
+
+<!-- If UI changes, include before/after screenshots -->
+
+| Before | After |
+|--------|-------|
+|        |       |
+
+---
+
+## Deployment Notes
+
+### Migration Required
+
+- [ ] Database migration needed
+- [ ] Configuration changes required
+- [ ] Environment variables to add
+- [ ] Service restart required
+
+### Rollback Plan
+
+<!-- Describe how to rollback if needed -->
+
+
+
+---
+
+## Checklist
+
+- [ ] I have read the [CONTRIBUTING.md](CONTRIBUTING.md) document
+- [ ] My code follows the project's coding guidelines
+- [ ] I have performed a self-review
+- [ ] I have commented my code where appropriate
+- [ ] I have updated the documentation
+- [ ] My changes generate no new warnings
+- [ ] I have added tests that prove my fix/feature works
+- [ ] All new and existing tests pass
+- [ ] Any dependent changes are merged and published
+
+---
+
+## Additional Context
+
+<!-- Add any other context about the PR here -->
+
+
+
+---
+
+## Reviewers
+
+<!-- Tag reviewers -->
+
+@rpauts2
+
+---
+
+**Thank you for your contribution!** 🚀

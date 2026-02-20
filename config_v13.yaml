@@ -1,0 +1,69 @@
+# PhantomProxy v13 - Extended modules configuration
+# Добавьте в основной config.yaml под ключом v13 или используйте merge
+
+v13:
+  # C2 Integration
+  c2:
+    sliver:
+      enabled: false
+      server_url: "https://c2.example.com"
+      operator_token: ""
+      callback_host: ""
+    cobalt_strike:
+      enabled: false
+      team_server_url: ""
+      external_c2:
+        enabled: false
+        bind_host: "0.0.0.0"
+        bind_port: 0
+    empire:
+      enabled: false
+      server_url: "http://localhost:1337"
+      token: ""
+    http_callback:
+      enabled: false
+      callback_url: "https://your-callback.example.com/api/phantom"
+      headers: ["Authorization: Bearer YOUR_TOKEN"]
+    dns_tunnel:
+      enabled: false
+      domain: "exfil.yourdomain.com"
+      chunk_size: 60
+
+  # Credential Stuffing
+  credential_stuffing:
+    enabled: false
+    targets: []
+    rate_limit: 10
+
+  # Have I Been Pwned (k-anonymity API)
+  hibp:
+    enabled: false
+    api_key: ""  # Optional, for higher rate limits
+
+  # Payload Generator (msfvenom)
+  payload:
+    enabled: false
+    msfvenom_path: "msfvenom"
+    output_dir: "./payloads"
+
+  # Evasion (parameters for Sliver/Havoc implants)
+  evasion:
+    sleep_obfuscation: false
+    sandbox_evasion: false
+    amsi_bypass: false
+    etw_patch: false
+    process_injection: "none"
+
+  # Exfiltration Simulation
+  exfiltration:
+    enabled: false
+    target_types: [".docx", ".xlsx", ".pdf"]
+    max_size_mb: 10
+    cloud_provider: ""
+
+  # Social Engineering
+  social_engineering:
+    enabled: false
+    smtp_host: ""
+    smtp_port: 587
+    rate_limit: 5

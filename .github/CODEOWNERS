@@ -1,0 +1,161 @@
+# =============================================================================
+# PhantomProxy Pro - CODEOWNERS
+# Defines code owners for automatic review assignments
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+# Last Updated: February 20, 2026
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Default Owners (Apply to all files unless overridden)
+# -----------------------------------------------------------------------------
+* @rpauts2
+
+# -----------------------------------------------------------------------------
+# Core Application Code
+# -----------------------------------------------------------------------------
+# Python modules
+*.py @rpauts2
+modules/ @rpauts2
+api*.py @rpauts2
+
+# Go modules
+*.go @rpauts2
+internal/ @rpauts2
+cmd/ @rpauts2
+pkg/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Configuration Files
+# -----------------------------------------------------------------------------
+*.yaml @rpauts2
+*.yml @rpauts2
+*.json @rpauts2
+*.toml @rpauts2
+config*.py @rpauts2
+
+# -----------------------------------------------------------------------------
+# Infrastructure & DevOps
+# -----------------------------------------------------------------------------
+# Docker
+Dockerfile* @rpauts2
+docker-compose*.yml @rpauts2
+.docker/ @rpauts2
+
+# Kubernetes
+*.yaml @rpauts2
+k8s/ @rpauts2
+helm/ @rpauts2
+
+# CI/CD
+.github/workflows/ @rpauts2
+.gitlab-ci.yml @rpauts2
+.travis.yml @rpauts2
+Jenkinsfile @rpauts2
+
+# Infrastructure as Code
+*.tf @rpauts2
+*.tfvars @rpauts2
+terraform/ @rpauts2
+ansible/ @rpauts2
+puppet/ @rpauts2
+chef/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Documentation
+# -----------------------------------------------------------------------------
+*.md @rpauts2
+docs/ @rpauts2
+wiki/ @rpauts2
+README* @rpauts2
+CHANGELOG.md @rpauts2
+CONTRIBUTING.md @rpauts2
+LICENSE @rpauts2
+
+# -----------------------------------------------------------------------------
+# Security Files
+# -----------------------------------------------------------------------------
+SECURITY.md @rpauts2
+.internal/ @rpauts2
+evasion/ @rpauts2
+internal/evasion/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Test Files
+# -----------------------------------------------------------------------------
+tests/ @rpauts2
+test/ @rpauts2
+*_test.go @rpauts2
+test_*.py @rpauts2
+
+# -----------------------------------------------------------------------------
+# Frontend (if applicable)
+# -----------------------------------------------------------------------------
+*.html @rpauts2
+*.css @rpauts2
+*.scss @rpauts2
+*.js @rpauts2
+*.ts @rpauts2
+*.jsx @rpauts2
+*.tsx @rpauts2
+src/frontend/ @rpauts2
+client/ @rpauts2
+web/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Mobile (if applicable)
+# -----------------------------------------------------------------------------
+*.swift @rpauts2
+*.kt @rpauts2
+*.java @rpauts2
+ios/ @rpauts2
+android/ @rpauts2
+mobile/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Scripts
+# -----------------------------------------------------------------------------
+*.sh @rpauts2
+*.bat @rpauts2
+*.ps1 @rpauts2
+scripts/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Build & Artifacts
+# -----------------------------------------------------------------------------
+Makefile @rpauts2
+*.mk @rpauts2
+build/ @rpauts2
+dist/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# IDE & Editor Config
+# -----------------------------------------------------------------------------
+.editorconfig @rpauts2
+.gitattributes @rpauts2
+.gitignore @rpauts2
+
+# -----------------------------------------------------------------------------
+# AI & ML (if applicable)
+# -----------------------------------------------------------------------------
+*.ipynb @rpauts2
+ai_*.py @rpauts2
+models/ @rpauts2
+ml/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Database & Migrations
+# -----------------------------------------------------------------------------
+*.sql @rpauts2
+migrations/ @rpauts2
+db/ @rpauts2
+database/ @rpauts2
+
+# -----------------------------------------------------------------------------
+# Excluded from Code Ownership (Auto-generated files)
+# -----------------------------------------------------------------------------
+# vendor/
+# node_modules/
+# *.min.js
+# *.min.css
+
+# End of CODEOWNERS

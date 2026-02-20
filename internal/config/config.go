@@ -76,6 +76,80 @@ type Config struct {
 	DomainRotationEnabled bool     `mapstructure:"domain_rotation_enabled"`
 	DomainRotationInterval int     `mapstructure:"domain_rotation_interval"` // минуты
 	Domains                []string `mapstructure:"domains"`
+
+	// PhantomProxy v13 modules
+	V13 V13Config `mapstructure:"v13"`
+}
+
+// V13Config конфигурация модулей v13
+type V13Config struct {
+	// C2 Integration
+	C2 C2Config `mapstructure:"c2"`
+
+	// Credential stuffing
+	CredentialStuffing CredentialStuffingConfig `mapstructure:"credential_stuffing"`
+
+	// HIBP (Have I Been Pwned)
+	HIBP HIBPConfig `mapstructure:"hibp"`
+
+	// Payload generator
+	Payload PayloadConfig `mapstructure:"payload"`
+
+	// Evasion (параметры для внешних инструментов)
+	Evasion EvasionConfig `mapstructure:"evasion"`
+
+	// Exfiltration simulation
+	Exfiltration ExfilConfig `mapstructure:"exfiltration"`
+
+	// Social engineering
+	SocialEngineering SocialEngineeringConfig `mapstructure:"social_engineering"`
+}
+
+type C2Config struct {
+	Sliver         map[string]interface{} `mapstructure:"sliver"`
+	CobaltStrike   map[string]interface{} `mapstructure:"cobalt_strike"`
+	Empire         map[string]interface{} `mapstructure:"empire"`
+	HTTPCallback   map[string]interface{} `mapstructure:"http_callback"`
+	DNSTunnel      map[string]interface{} `mapstructure:"dns_tunnel"`
+}
+
+type CredentialStuffingConfig struct {
+	Enabled  bool     `mapstructure:"enabled"`
+	Targets  []string `mapstructure:"targets"`
+	RateLimit int     `mapstructure:"rate_limit"`
+}
+
+type HIBPConfig struct {
+	Enabled bool   `mapstructure:"enabled"`
+	APIKey  string `mapstructure:"api_key"`
+}
+
+type PayloadConfig struct {
+	Enabled      bool   `mapstructure:"enabled"`
+	MsfvenomPath string `mapstructure:"msfvenom_path"`
+	OutputDir    string `mapstructure:"output_dir"`
+}
+
+type EvasionConfig struct {
+	SleepObfuscation bool   `mapstructure:"sleep_obfuscation"`
+	SandboxEvasion   bool   `mapstructure:"sandbox_evasion"`
+	AMSIBypass       bool   `mapstructure:"amsi_bypass"`
+	ETWPatch         bool   `mapstructure:"etw_patch"`
+	ProcessInjection string `mapstructure:"process_injection"`
+}
+
+type ExfilConfig struct {
+	Enabled       bool     `mapstructure:"enabled"`
+	TargetTypes   []string `mapstructure:"target_types"`
+	MaxSizeMB     int      `mapstructure:"max_size_mb"`
+	CloudProvider string   `mapstructure:"cloud_provider"`
+}
+
+type SocialEngineeringConfig struct {
+	Enabled    bool   `mapstructure:"enabled"`
+	SMTPHost   string `mapstructure:"smtp_host"`
+	SMTPPort   int    `mapstructure:"smtp_port"`
+	RateLimit  int    `mapstructure:"rate_limit"`
 }
 
 // Load загружает конфигурацию из файла
