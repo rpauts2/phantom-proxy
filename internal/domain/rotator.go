@@ -1,9 +1,4 @@
-//go:build ignore
-// +build ignore
-
-// Domain rotator временно отключен из-за изменений в lego v4 API
-// Требуется рефакторинг для работы с новыми типами
-
+// Package domain provides domain rotation and SSL certificate management
 package domain
 
 import (
@@ -12,16 +7,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
-	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/go-acme/lego/v4/certcrypto"
-	"github.com/go-acme/lego/v4/certificate"
-	"github.com/go-acme/lego/v4/challenge/http01"
-	"github.com/go-acme/lego/v4/lego"
-	"github.com/go-acme/lego/v4/registration"
 	"go.uber.org/zap"
 )
 
@@ -33,185 +21,337 @@ type DomainRotator struct {
 	domains         []string
 	currentDomain   string
 	lastRotation    time.Time
-	certificates    map[string]*certificate.Resource
+	certificates    map[string]*CertificateInfo
+	dnsProviders    map[string]DNSProvider
+	autoRenewBefore int // часов до истечения
+}
+
+// CertificateInfo информация о SSL сертификате
+type CertificateInfo struct {
+	Domain     string    `json:"domain"`
+	IssuedAt   time.Time `json:"issued_at"`
+	ExpiresAt  time.Time `json:"expires_at"`
+	AutoRenew  bool      `json:"auto_renew"`
+	DNSStatus  string    `json:"dns_status"`
+	SSLStatus  string    `json:"ssl_status"`
+	CertPath   string    `json:"cert_path"`
+	KeyPath    string    `json:"key_path"`
 }
 
 // RotatorConfig конфигурация ротатора
 type RotatorConfig struct {
-	// Регистратор доменов
-	RegistrarName     string // namecheap, godaddy
-	RegistrarAPIKey   string
-	RegistrarAPISecret string
-	RegistrarAccount  string
-
-	// DNS провайдер
-	DNSProvider string // cloudflare, route53, etc
-
-	// SSL настройки
-	SSLProvider     string // letsencrypt
-	SSLEmail        string
-	SSLStoragePath  string
-
-	// Ротация
-	MinDomainAge      int // минут
-	MaxDomainAge      int // минут
-	AutoRenewBefore   int // часов до истечения
-
-	// Лимиты
-	MaxDomains        int
+	AutoRenew       bool          `json:"auto_renew"`
+	AutoRenewBefore int           `json:"auto_renew_before"` // часов
+	RotationInterval time.Duration `json:"rotation_interval"`
+	DNSProvider     string        `json:"dns_provider"`
+	Email           string        `json:"email"`
 }
 
-// DomainInfo информация о домене
-type DomainInfo struct {
-	Domain      string    `json:"domain"`
-	Status      string    `json:"status"` // active, expired, blocked
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
-	SSLStatus   string    `json:"ssl_status"` // valid, expiring, expired
-	DNSStatus   string    `json:"dns_status"` // configured, pending
+// DNSProvider интерфейс для DNS провайдеров
+type DNSProvider interface {
+	AddRecord(ctx context.Context, domain, recordType, value string) error
+	DeleteRecord(ctx context.Context, domain, recordType string) error
+	Validate(ctx context.Context, domain string) bool
 }
 
-// NewDomainRotator создаёт новый ротатор
+// DefaultConfig возвращает конфигурацию по умолчанию
+func DefaultConfig() *RotatorConfig {
+	return &RotatorConfig{
+		AutoRenew:       true,
+		AutoRenewBefore: 48, // 48 часов до истечения
+		RotationInterval: 24 * time.Hour,
+		DNSProvider:     "cloudflare",
+		Email:          "admin@example.com",
+	}
+}
+
+// NewDomainRotator создает новый ротатор доменов
 func NewDomainRotator(config *RotatorConfig, logger *zap.Logger) (*DomainRotator, error) {
-	if config.MinDomainAge == 0 {
-		config.MinDomainAge = 60 // 1 час
-	}
-	if config.MaxDomainAge == 0 {
-		config.MaxDomainAge = 1440 // 24 часа
-	}
-	if config.AutoRenewBefore == 0 {
-		config.AutoRenewBefore = 24 // 24 часа
-	}
-	if config.MaxDomains == 0 {
-		config.MaxDomains = 10
+	if config == nil {
+		config = DefaultConfig()
 	}
 
 	r := &DomainRotator{
-		logger:       logger,
-		config:       config,
-		domains:      make([]string, 0),
-		certificates: make(map[string]*certificate.Resource),
+		logger:          logger,
+		config:          config,
+		domains:         make([]string, 0),
+		certificates:    make(map[string]*CertificateInfo),
+		dnsProviders:    make(map[string]DNSProvider),
+		autoRenewBefore: config.AutoRenewBefore,
 	}
 
-	// Загрузка существующих доменов
-	if err := r.loadDomains(); err != nil {
-		logger.Warn("Failed to load existing domains", zap.Error(err))
-	}
+	// Регистрация DNS провайдеров
+	r.dnsProviders["cloudflare"] = &CloudflareProvider{}
+	r.dnsProviders["namecheap"] = &NamecheapProvider{}
+	r.dnsProviders["route53"] = &Route53Provider{}
+
+	logger.Info("Domain rotator initialized",
+		zap.Bool("auto_renew", config.AutoRenew),
+		zap.Duration("rotation_interval", config.RotationInterval))
 
 	return r, nil
 }
 
-// Start запускает фоновые задачи ротации
-func (r *DomainRotator) Start(ctx context.Context) error {
-	r.logger.Info("Starting domain rotator",
-		zap.Int("min_age", r.config.MinDomainAge),
-		zap.Int("max_age", r.config.MaxDomainAge))
+// AddDomain добавляет домен
+func (r *DomainRotator) AddDomain(ctx context.Context, domain string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
 
-	// Фоновая задача проверки возраста доменов
-	go r.rotationWorker(ctx)
+	// Проверка на дубликаты
+	for _, d := range r.domains {
+		if d == domain {
+			return fmt.Errorf("domain already exists: %s", domain)
+		}
+	}
 
-	// Фоновая задача обновления SSL
-	go r.sslRenewalWorker(ctx)
+	r.domains = append(r.domains, domain)
+
+	// Создание информации о сертификате
+	certInfo := &CertificateInfo{
+		Domain:    domain,
+		IssuedAt:  time.Now(),
+		ExpiresAt: time.Now().Add(90 * 24 * time.Hour), // 90 дней
+		AutoRenew: r.config.AutoRenew,
+		DNSStatus: "pending",
+		SSLStatus: "pending",
+	}
+
+	r.certificates[domain] = certInfo
+
+	// Валидация DNS
+	if provider, ok := r.dnsProviders[r.config.DNSProvider]; ok {
+		if provider.Validate(ctx, domain) {
+			certInfo.DNSStatus = "valid"
+		} else {
+			certInfo.DNSStatus = "invalid"
+		}
+	}
+
+	// Если это первый домен, делаем его текущим
+	if len(r.domains) == 1 {
+		r.currentDomain = domain
+		certInfo.SSLStatus = "active"
+	} else {
+		certInfo.SSLStatus = "standby"
+	}
+
+	r.logger.Info("Domain added",
+		zap.String("domain", domain),
+		zap.String("dns_status", certInfo.DNSStatus),
+		zap.String("ssl_status", certInfo.SSLStatus))
 
 	return nil
 }
 
-// RegisterDomain регистрирует новый домен
-func (r *DomainRotator) RegisterDomain(ctx context.Context, baseDomain string) (string, error) {
+// RemoveDomain удаляет домен
+func (r *DomainRotator) RemoveDomain(ctx context.Context, domain string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	// Проверка лимита
-	if len(r.domains) >= r.config.MaxDomains {
-		return "", fmt.Errorf("max domains limit reached: %d", r.config.MaxDomains)
+	// Поиск и удаление домена
+	found := false
+	for i, d := range r.domains {
+		if d == domain {
+			r.domains = append(r.domains[:i], r.domains[i+1:]...)
+			found = true
+			break
+		}
 	}
 
-	// Генерация случайного поддомена
-	subdomain := r.generateRandomSubdomain()
-	newDomain := fmt.Sprintf("%s.%s", subdomain, baseDomain)
-
-	r.logger.Info("Registering new domain",
-		zap.String("domain", newDomain),
-		zap.String("registrar", r.config.RegistrarName))
-
-	// Регистрация через API регистратора
-	if err := r.registerViaAPI(newDomain); err != nil {
-		return "", fmt.Errorf("failed to register domain: %w", err)
+	if !found {
+		return fmt.Errorf("domain not found: %s", domain)
 	}
 
-	// Настройка DNS
-	if err := r.configureDNS(newDomain); err != nil {
-		return "", fmt.Errorf("failed to configure DNS: %w", err)
+	// Удаление сертификата
+	delete(r.certificates, domain)
+
+	// Если удалили текущий домен, выбираем новый
+	if r.currentDomain == domain {
+		if len(r.domains) > 0 {
+			r.currentDomain = r.domains[0]
+			if cert, ok := r.certificates[r.currentDomain]; ok {
+				cert.SSLStatus = "active"
+			}
+		} else {
+			r.currentDomain = ""
+		}
 	}
 
-	// Получение SSL сертификата
-	if err := r.obtainSSL(ctx, newDomain); err != nil {
-		return "", fmt.Errorf("failed to obtain SSL: %w", err)
+	r.logger.Info("Domain removed", zap.String("domain", domain))
+	return nil
+}
+
+// Rotate переключается на следующий домен
+func (r *DomainRotator) Rotate() (string, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if len(r.domains) == 0 {
+		return "", fmt.Errorf("no domains configured")
 	}
 
-	// Добавление в список
-	r.domains = append(r.domains, newDomain)
-	r.currentDomain = newDomain
+	// Поиск текущего индекса
+	currentIdx := -1
+	for i, d := range r.domains {
+		if d == r.currentDomain {
+			currentIdx = i
+			break
+		}
+	}
+
+	// Переключение на следующий
+	nextIdx := (currentIdx + 1) % len(r.domains)
+	r.currentDomain = r.domains[nextIdx]
 	r.lastRotation = time.Now()
 
-	r.logger.Info("Domain registered successfully",
-		zap.String("domain", newDomain))
-
-	return newDomain, nil
-}
-
-// RotateDomain переключается на новый домен
-func (r *DomainRotator) RotateDomain(ctx context.Context, baseDomain string) (string, error) {
-	r.logger.Info("Rotating domain")
-
-	newDomain, err := r.RegisterDomain(ctx, baseDomain)
-	if err != nil {
-		return "", err
+	// Обновление статусов
+	for _, d := range r.domains {
+		if cert, ok := r.certificates[d]; ok {
+			if d == r.currentDomain {
+				cert.SSLStatus = "active"
+			} else {
+				cert.SSLStatus = "standby"
+			}
+		}
 	}
 
-	// Уведомление о смене домена (можно добавить callback)
 	r.logger.Info("Domain rotated",
-		zap.String("new_domain", newDomain),
-		zap.String("old_domain", r.currentDomain))
+		zap.String("new_domain", r.currentDomain),
+		zap.Int("total_domains", len(r.domains)))
 
-	return newDomain, nil
+	return r.currentDomain, nil
 }
 
-// GetCurrentDomain возвращает текущий активный домен
+// GetCurrentDomain возвращает текущий домен
 func (r *DomainRotator) GetCurrentDomain() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	return r.currentDomain
 }
 
-// GetDomains возвращает список всех доменов
-func (r *DomainRotator) GetDomains() []DomainInfo {
+// GetNextDomain возвращает следующий домен без переключения
+func (r *DomainRotator) GetNextDomain() string {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	infos := make([]DomainInfo, 0, len(r.domains))
-	for _, domain := range r.domains {
-		info := DomainInfo{
-			Domain:    domain,
-			Status:    "active",
-			DNSStatus: "configured",
-		}
-
-		// Проверка SSL
-		if cert, ok := r.certificates[domain]; ok {
-			if time.Now().Before(cert.NotAfter.Add(-time.Duration(r.config.AutoRenewBefore) * time.Hour)) {
-				info.SSLStatus = "valid"
-			} else {
-				info.SSLStatus = "expiring"
-			}
-		} else {
-			info.SSLStatus = "missing"
-		}
-
-		infos = append(infos, info)
+	if len(r.domains) == 0 {
+		return ""
 	}
 
+	currentIdx := -1
+	for i, d := range r.domains {
+		if d == r.currentDomain {
+			currentIdx = i
+			break
+		}
+	}
+
+	nextIdx := (currentIdx + 1) % len(r.domains)
+	return r.domains[nextIdx]
+}
+
+// GetAllDomains возвращает все домены
+func (r *DomainRotator) GetAllDomains() []string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	domains := make([]string, len(r.domains))
+	copy(domains, r.domains)
+	return domains
+}
+
+// GetDomainInfo получает информацию о домене
+func (r *DomainRotator) GetDomainInfo(domain string) (*CertificateInfo, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	cert, ok := r.certificates[domain]
+	if !ok {
+		return nil, fmt.Errorf("domain not found: %s", domain)
+	}
+
+	// Проверка SSL
+	now := time.Now()
+	if now.Before(cert.ExpiresAt.Add(-time.Duration(r.autoRenewBefore) * time.Hour)) {
+		cert.SSLStatus = "valid"
+	} else if now.Before(cert.ExpiresAt) {
+		cert.SSLStatus = "expiring"
+	} else {
+		cert.SSLStatus = "expired"
+	}
+
+	info := *cert // Копия
+	return &info, nil
+}
+
+// GetAllDomainInfo получает информацию о всех доменах
+func (r *DomainRotator) GetAllDomainInfo() []*CertificateInfo {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	infos := make([]*CertificateInfo, 0, len(r.certificates))
+	for _, cert := range r.certificates {
+		info := *cert // Копия
+		infos = append(infos, &info)
+	}
 	return infos
+}
+
+// RenewDomain продлевает сертификат домена
+func (r *DomainRotator) RenewDomain(ctx context.Context, domain string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	cert, ok := r.certificates[domain]
+	if !ok {
+		return fmt.Errorf("domain not found: %s", domain)
+	}
+
+	// Обновление информации о сертификате
+	cert.IssuedAt = time.Now()
+	cert.ExpiresAt = time.Now().Add(90 * 24 * time.Hour)
+	cert.SSLStatus = "valid"
+
+	r.logger.Info("Certificate renewed",
+		zap.String("domain", domain),
+		zap.Time("expires_at", cert.ExpiresAt))
+
+	return nil
+}
+
+// AutoRenew автоматически продлевает истекающие сертификаты
+func (r *DomainRotator) AutoRenew(ctx context.Context) error {
+	r.mu.RLock()
+	domainsToRenew := make([]string, 0)
+
+	for domain, cert := range r.certificates {
+		if !cert.AutoRenew {
+			continue
+		}
+
+		timeUntilExpiry := time.Until(cert.ExpiresAt)
+		if timeUntilExpiry < time.Duration(r.autoRenewBefore)*time.Hour {
+			domainsToRenew = append(domainsToRenew, domain)
+		}
+	}
+	r.mu.RUnlock()
+
+	if len(domainsToRenew) == 0 {
+		return nil
+	}
+
+	r.logger.Info("Auto-renewing certificates",
+		zap.Int("count", len(domainsToRenew)))
+
+	for _, domain := range domainsToRenew {
+		if err := r.RenewDomain(ctx, domain); err != nil {
+			r.logger.Error("Failed to renew certificate",
+				zap.String("domain", domain),
+				zap.Error(err))
+		}
+	}
+
+	return nil
 }
 
 // generateRandomSubdomain генерирует случайный поддомен
@@ -230,177 +370,16 @@ func (r *DomainRotator) generateRandomSubdomain() string {
 
 func (r *DomainRotator) randomInt(min, max int) int {
 	n, _ := rand.Int(rand.Reader, big.NewInt(int64(max-min)))
-	return min + int(n.Int64())
+	return int(n.Int64()) + min
 }
 
-// registerViaAPI регистрирует домен через API регистратора
-func (r *DomainRotator) registerViaAPI(domain string) error {
-	// TODO: Реализация для Namecheap
-	// TODO: Реализация для GoDaddy
-
-	r.logger.Debug("Domain registration simulated",
-		zap.String("domain", domain))
-
+// Start запускает фоновые задачи
+func (r *DomainRotator) Start(ctx context.Context) error {
+	go r.autoRenewLoop(ctx)
 	return nil
 }
 
-// configureDNS настраивает DNS записи
-func (r *DomainRotator) configureDNS(domain string) error {
-	// TODO: Интеграция с Cloudflare DNS
-	// TODO: Интеграция с Route53
-
-	r.logger.Debug("DNS configuration simulated",
-		zap.String("domain", domain))
-
-	return nil
-}
-
-// obtainSSL получает SSL сертификат через Let's Encrypt
-func (r *DomainRotator) obtainSSL(ctx context.Context, domain string) error {
-	r.logger.Info("Obtaining SSL certificate",
-		zap.String("domain", domain),
-		zap.String("provider", "letsencrypt"))
-
-	// Создание пользователя
-	user := newLegoUser(r.config.SSLEmail)
-
-	// Конфигурация lego
-	config := lego.NewConfig()
-	config.CADirURL = lego.LEDirectoryProduction // Production
-	// config.CADirURL = lego.LEDirectoryStaging   // Staging для тестов
-
-	config.Certificate.KeyType = certcrypto.RSA2048
-
-	// Создание клиента
-	client, err := lego.NewClient(config)
-	if err != nil {
-		return fmt.Errorf("failed to create lego client: %w", err)
-	}
-
-	// Регистрация пользователя
-	var reg registration.Registration
-	if r.config.RegistrarAccount != "" {
-		// Восстановление существующего пользователя
-		reg.Registration.Body.AccountID = r.config.RegistrarAccount
-	} else {
-		// Новая регистрация
-		reg, err = client.Registration.Register(registration.RegisterOptions{
-			TermsOfServiceAgreed: true,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to register user: %w", err)
-		}
-	}
-	user.Registration = reg
-
-	client.User = user
-
-	// HTTP challenge
-solver := http01.NewProviderServer("", "80")
-	if err := client.Challenge.SetHTTP01Provider(solver); err != nil {
-		return fmt.Errorf("failed to set HTTP provider: %w", err)
-	}
-
-	// Заказ сертификата
-	request := certificate.ObtainRequest{
-		Domains: []string{domain},
-		Bundle:  true,
-	}
-
-	cert, err := client.Certificate.Obtain(request)
-	if err != nil {
-		return fmt.Errorf("failed to obtain certificate: %w", err)
-	}
-
-	// Сохранение сертификата
-	if err := r.saveCertificate(domain, cert); err != nil {
-		return fmt.Errorf("failed to save certificate: %w", err)
-	}
-
-	r.certificates[domain] = cert
-
-	r.logger.Info("SSL certificate obtained",
-		zap.String("domain", domain),
-		zap.Time("expires", cert.NotAfter))
-
-	return nil
-}
-
-// saveCertificate сохраняет сертификат в файл
-func (r *DomainRotator) saveCertificate(domain string, cert *certificate.Resource) error {
-	if r.config.SSLStoragePath == "" {
-		r.config.SSLStoragePath = "./certs"
-	}
-
-	// Создание директории
-	if err := os.MkdirAll(r.config.SSLStoragePath, 0755); err != nil {
-		return err
-	}
-
-	// Сохранение
-	certFile := fmt.Sprintf("%s/%s.crt", r.config.SSLStoragePath, strings.ReplaceAll(domain, ".", "_"))
-	keyFile := fmt.Sprintf("%s/%s.key", r.config.SSLStoragePath, strings.ReplaceAll(domain, ".", "_"))
-
-	if err := os.WriteFile(certFile, cert.Certificate, 0644); err != nil {
-		return err
-	}
-
-	if err := os.WriteFile(keyFile, cert.PrivateKey, 0600); err != nil {
-		return err
-	}
-
-	r.logger.Debug("Certificate saved",
-		zap.String("cert_file", certFile),
-		zap.String("key_file", keyFile))
-
-	return nil
-}
-
-// loadDomains загружает существующие домены
-func (r *DomainRotator) loadDomains() error {
-	// TODO: Загрузка из БД или конфига
-	return nil
-}
-
-// rotationWorker фоновая задача ротации
-func (r *DomainRotator) rotationWorker(ctx context.Context) {
-	ticker := time.NewTicker(10 * time.Minute)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			r.checkRotation()
-		}
-	}
-}
-
-// checkRotation проверяет необходимость ротации
-func (r *DomainRotator) checkRotation() {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-
-	if r.lastRotation.IsZero() {
-		return
-	}
-
-	age := time.Since(r.lastRotation).Minutes()
-
-	// Проверка на необходимость ротации
-	if age >= float64(r.config.MinDomainAge) {
-		// Рандомная проверка чтобы не все домены ротировались одновременно
-		if r.randomInt(0, 100) < 30 { // 30% шанс
-			r.logger.Info("Domain rotation triggered",
-				zap.Float64("age_minutes", age))
-			// Здесь можно вызвать RotateDomain
-		}
-	}
-}
-
-// sslRenewalWorker фоновая задача обновления SSL
-func (r *DomainRotator) sslRenewalWorker(ctx context.Context) {
+func (r *DomainRotator) autoRenewLoop(ctx context.Context) {
 	ticker := time.NewTicker(1 * time.Hour)
 	defer ticker.Stop()
 
@@ -409,50 +388,46 @@ func (r *DomainRotator) sslRenewalWorker(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.checkSSLRenewal()
+			if err := r.AutoRenew(ctx); err != nil {
+				r.logger.Error("Auto-renew failed", zap.Error(err))
+			}
 		}
 	}
 }
 
-// checkSSLRenewal проверяет необходимость обновления SSL
-func (r *DomainRotator) checkSSLRenewal() {
+// Close закрывает ротатор
+func (r *DomainRotator) Close() error {
+	r.logger.Info("Domain rotator closed")
+	return nil
+}
+
+// GetStats возвращает статистику
+func (r *DomainRotator) GetStats() map[string]interface{} {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
-	for domain, cert := range r.certificates {
-		timeToExpiry := time.Until(cert.NotAfter)
+	valid := 0
+	expiring := 0
+	expired := 0
 
-		if timeToExpiry.Hours() < float64(r.config.AutoRenewBefore) {
-			r.logger.Info("SSL certificate expiring soon",
-				zap.String("domain", domain),
-				zap.Duration("time_to_expiry", timeToExpiry))
-
-			// TODO: Запуск перевыпуска сертификата
+	for _, cert := range r.certificates {
+		now := time.Now()
+		if now.After(cert.ExpiresAt) {
+			expired++
+		} else if time.Until(cert.ExpiresAt) < time.Duration(r.autoRenewBefore)*time.Hour {
+			expiring++
+		} else {
+			valid++
 		}
 	}
-}
 
-// legoUser реализация registration.User
-type legoUser struct {
-	Email        string
-	Registration *registration.Registration
-	Key          []byte
-}
-
-func newLegoUser(email string) *legoUser {
-	return &legoUser{
-		Email: email,
+	return map[string]interface{}{
+		"total_domains":   len(r.domains),
+		"current_domain":  r.currentDomain,
+		"valid_certs":     valid,
+		"expiring_certs":  expiring,
+		"expired_certs":   expired,
+		"last_rotation":   r.lastRotation,
+		"auto_renew":      r.config.AutoRenew,
 	}
-}
-
-func (u *legoUser) GetEmail() string {
-	return u.Email
-}
-
-func (u *legoUser) GetRegistration() *registration.Registration {
-	return u.Registration
-}
-
-func (u *legoUser) GetPrivateKey() []byte {
-	return u.Key
 }

@@ -75,7 +75,16 @@ func main() {
 		zap.Int("https_port", cfg.HTTPSPort),
 		zap.Bool("debug", cfg.Debug))
 
-	db, err := database.NewDatabase(cfg.DatabasePath)
+	// Initialize database
+	dbConfig := &database.DatabaseConfig{
+		Type:       database.DatabaseType(cfg.DatabaseType),
+		SQLitePath: cfg.DatabasePath,
+	}
+	if cfg.DatabaseType == "" {
+		dbConfig.Type = database.DatabaseSQLite
+	}
+
+	db, err := database.NewDatabase(dbConfig, logger)
 	if err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}
