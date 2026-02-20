@@ -2,9 +2,13 @@
 
 **Enterprise Red Team Simulation Platform**
 
-![Version](https://img.shields.io/badge/version-12.5%20PRO%2B%2B%2B%2B-blue)
-![License](https://img.shields.io/badge/license-Proprietary-green)
-![Python](https://img.shields.io/badge/python-3.8%2B-blue)
+[![Version](https://img.shields.io/badge/version-12.5%20PRO%2B%2B%2B%2B-blue)]()
+[![License](https://img.shields.io/badge/license-Proprietary-green)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.8%2B-blue)]()
+[![CI/CD](https://github.com/rpauts2/phantom-proxy/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/rpauts2/phantom-proxy/actions)
+[![Issues](https://img.shields.io/github/issues/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/issues)
+[![Stars](https://img.shields.io/github/stars/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/stargazers)
+[![Forks](https://img.shields.io/github/forks/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/network)
 
 ---
 
