@@ -36,6 +36,18 @@ services:
       - ollama
     restart: unless-stopped
 
+  payload-service:
+    build:
+      context: ./payload_service
+      dockerfile: Dockerfile
+    ports:
+      - "8082:8082"
+    volumes:
+      - payload_data:/app/payloads
+    environment:
+      MSFVENOM_PATH: /usr/bin/msfvenom
+    restart: unless-stopped
+
   ollama:
     image: ollama/ollama:latest
     ports:
@@ -158,3 +170,4 @@ volumes:
   grafana_data:
   ai_data:
   ollama_data:
+  payload_data:
