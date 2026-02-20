@@ -1,0 +1,124 @@
+# PhantomProxy Pro - Enterprise Killer v13.0
+# docker-compose up -d
+
+services:
+  phantom-proxy:
+    build: .
+    hostname: phantom-proxy
+    ports:
+      - "443:443"
+      - "8080:8080"
+    volumes:
+      - ./config.yaml:/app/config.yaml
+      - ./configs:/app/configs
+      - ./certs:/app/certs:ro
+      - proxy_data:/data
+    environment:
+      PHANTOM_DATABASE_PATH: /data/phantom.db
+    restart: unless-stopped
+
+  postgres:
+    image: timescale/timescaledb:latest-pg16
+    environment:
+      POSTGRES_USER: phantom
+      POSTGRES_PASSWORD: phantom
+      POSTGRES_DB: phantom
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U phantom"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    volumes:
+      - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command: --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle
+
+  grafana:
+    image: grafana/grafana:10.3.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    depends_on:
+      - prometheus
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
+      REDIS_URL: redis://redis:6379/0
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    command: celery -A celery_app worker -l info
+    environment:
+      DATABASE_URL: postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - api
+      - redis
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://phantom-proxy:8080
+    depends_on:
+      - phantom-proxy
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    volumes:
+      - ./deploy/otel-collector-config.yaml:/etc/otel/config.yaml:ro
+    command: ["--config=/etc/otel/config.yaml"]
+    ports:
+      - "4317:4317"
+      - "4318:4318"
+
+volumes:
+  proxy_data:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:

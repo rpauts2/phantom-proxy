@@ -1,0 +1,11 @@
+# PhantomProxy - Prometheus config
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'phantom-proxy'
+    static_configs:
+      - targets: ['phantom-proxy:8080']
+    metrics_path: /metrics
+    scrape_interval: 30s
+    # PhantomProxy needs to expose /metrics - add later

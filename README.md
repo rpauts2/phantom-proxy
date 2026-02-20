@@ -2,7 +2,7 @@
 
 **Enterprise Red Team Simulation Platform**
 
-[![Version](https://img.shields.io/badge/version-12.5%20PRO%2B%2B%2B%2B-blue)]()
+[![Version](https://img.shields.io/badge/version-13.0-blue)]()
 [![License](https://img.shields.io/badge/license-Proprietary-green)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.8%2B-blue)]()
 [![CI/CD](https://github.com/rpauts2/phantom-proxy/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/rpauts2/phantom-proxy/actions)
@@ -128,40 +128,46 @@ phantom-proxy/
 
 ## 🚀 БЫСТРЫЙ СТАРТ
 
-### 1. Установка
+### 1. Сборка (Go установлен)
 
 ```bash
-# Клонирование репозитория
-git clone https://github.com/YOUR_USERNAME/phantom-proxy.git
-cd phantom-proxy
-
-# Установка зависимостей
-pip install -r requirements.txt
-
-# Копирование конфига
-cp config.example.yaml config.yaml
-
-# Настройка (отредактируйте config.yaml)
-nano config.yaml
+go build -o phantom-proxy.exe ./cmd/phantom-proxy
 ```
 
-### 2. Инициализация
+### 2. Запуск
+
+**Вариант A — локально**
+```bash
+# Создайте certs/ и config.yaml (см. config.yaml)
+./phantom-proxy --config config.yaml
+```
+
+**Вариант B — Docker (минимум)**
+```bash
+docker-compose -f docker-compose.minimal.yml up -d
+```
+
+**Вариант C — полный стек**
+```bash
+docker-compose up -d
+```
+
+### 3. Frontend (опционально)
 
 ```bash
-# Запуск главной программы
-python3 phantomproxy_v12_1_pro.py
-
-# В меню выберите: 1 (Start All Services)
+cd frontend
+npm install
+NEXT_PUBLIC_API_URL=http://localhost:8080 NEXT_PUBLIC_API_KEY=change-me-to-secure-random-string npm run dev
 ```
 
-### 3. Доступ
+### Доступ
 
-```
-Panel:       http://localhost:3000
-API:         http://localhost:8080/health
-Client:      http://localhost:3000/clients
-Billing:     http://localhost:3000/billing
-```
+| Сервис | URL |
+|--------|-----|
+| Proxy (HTTPS) | https://localhost:443 |
+| API | http://localhost:8080 |
+| Dashboard | http://localhost:3000 (после `npm run dev`) |
+| Health | http://localhost:8080/health |
 
 ---
 

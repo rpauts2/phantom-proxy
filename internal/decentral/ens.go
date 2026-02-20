@@ -221,24 +221,25 @@ func (c *ENSClient) GetBalance(ctx context.Context) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return balance, nil
 }
 
 // WaitForTransaction ожидает подтверждения транзакции
 func (c *ENSClient) WaitForTransaction(ctx context.Context, txHash common.Hash) error {
-	receipt, err := bind.WaitMined(ctx, c.client, txHash)
+	// Используем прямой опрос по хэшу вместо bind.WaitMined для совместимости.
+	receipt, err := c.client.TransactionReceipt(ctx, txHash)
 	if err != nil {
 		return err
 	}
-	
+
 	if receipt.Status == 0 {
 		return fmt.Errorf("transaction failed")
 	}
-	
+
 	c.logger.Info("Transaction confirmed",
 		zap.String("hash", txHash.Hex()),
 		zap.Uint64("block", receipt.BlockNumber.Uint64()))
-	
+
 	return nil
 }

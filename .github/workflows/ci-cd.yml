@@ -25,6 +25,7 @@ on:
 
 env:
   GO_VERSION: '1.21'
+  # PhantomProxy v13: Go 1.21+
   PYTHON_VERSION: '3.11'
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
@@ -264,7 +265,7 @@ jobs:
 
       - name: Build Go binary
         run: |
-          CGO_ENABLED=0 go build -ldflags="-s -w" -o "${{ matrix.artifact_name }}-go" . || true
+          CGO_ENABLED=1 go build -ldflags="-s -w" -o "${{ matrix.artifact_name }}-go" ./cmd/phantom-proxy || true
         shell: bash
 
       - name: Upload artifacts

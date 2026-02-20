@@ -454,11 +454,19 @@ func (d *Database) GetPhishlet(id string) (string, error) {
 	return config, nil
 }
 
-// ListPhishlets возвращает список phishlets
+// DeletePhishlet деактивирует phishlet (is_active = FALSE)
+func (d *Database) DeletePhishlet(id string) error {
+	query := `UPDATE phishlets SET is_active = FALSE, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+	_, err := d.db.Exec(query, id)
+	return err
+}
+
+// ListPhishlets возвращает список активных phishlets
 func (d *Database) ListPhishlets() ([]map[string]interface{}, error) {
 	query := `
 		SELECT id, name, target_domain, created_at, updated_at, is_active
 		FROM phishlets
+		WHERE is_active = TRUE
 		ORDER BY created_at DESC
 	`
 	

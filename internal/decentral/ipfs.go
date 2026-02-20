@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -347,8 +346,8 @@ func (c *IPFSClient) Unpin(ctx context.Context, cid string) error {
 	
 	c.mu.Lock()
 	// Удаление из кэша
-	for name, c := range c.pinnedCIDs {
-		if c == cid {
+	for name, cachedCID := range c.pinnedCIDs {
+		if cachedCID == cid {
 			delete(c.pinnedCIDs, name)
 			break
 		}

@@ -6,8 +6,6 @@ import (
 	"html/template"
 	"sync"
 	"time"
-
-	"github.com/phantom-proxy/phantom-proxy/internal/database"
 )
 
 // TargetProfile for personalized phishing

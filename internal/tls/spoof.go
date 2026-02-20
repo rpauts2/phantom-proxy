@@ -1,4 +1,4 @@
-package tls_spoof
+package tls
 
 import (
 	"crypto/sha256"

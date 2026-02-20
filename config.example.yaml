@@ -1,0 +1,11 @@
+# PhantomProxy — скопируйте в config.yaml
+bind_ip: "0.0.0.0"
+https_port: 443
+domain: "phantom.local"
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+database_path: "./phantom.db"
+phishlets_path: "./configs/phishlets"
+api_enabled: true
+api_port: 8080
+api_key: "change-me-to-secure-random-string"
