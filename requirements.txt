@@ -1,0 +1,36 @@
+# PhantomProxy Pro - Requirements
+# Python 3.8+
+
+# Core
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+pydantic==2.6.3
+
+# Database
+sqlite3  # built-in
+
+# Security
+cryptography==42.0.5
+pyotp==2.9.0
+
+# Reports
+reportlab==4.1.0
+
+# Email
+# (smtplib built-in)
+
+# HTTP
+requests==2.31.0
+
+# Utilities
+python-dotenv==1.0.1
+pyyaml==6.0.1
+
+# Development
+# pytest==8.0.0
+# black==24.2.0
+# flake8==7.0.0
+# mypy==1.8.0
+
+# Install:
+# pip install -r requirements.txt

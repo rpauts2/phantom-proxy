@@ -1,0 +1,20 @@
+# PhantomProxy ML Optimization Dependencies
+
+# ML
+xgboost==2.0.3
+scikit-learn==1.4.0
+numpy==1.26.3
+pandas==2.2.0
+
+# API
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+pydantic==2.6.3
+
+# Database
+sqlite3 (built-in)
+
+# Utilities
+python-dotenv==1.0.1
+
+# Install: pip install -r requirements.txt

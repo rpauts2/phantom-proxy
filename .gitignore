@@ -1,0 +1,75 @@
+# Git
+.git/
+*.log
+*.pyc
+__pycache__/
+*.swp
+*.swo
+*~
+
+# Python
+venv/
+env/
+.env
+*.egg-info/
+.eggs/
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Reports & Exports
+reports/
+invoices/
+proposals/
+contracts/
+evidence/
+siem_exports/
+scheduler_logs/
+notifications/
+compliance_logs/
+backups/
+
+# Branding (keep placeholder)
+branding/*.png
+branding/*.ico
+branding/*.svg
+!branding/.gitkeep
+
+# Config (keep template)
+config.py
+*.local.yaml
+*.local.json
+!config.example.yaml
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Secrets (IMPORTANT!)
+*.key
+*.pem
+*.crt
+secrets/
+credentials/
+
+# Test data
+test_data/
+*.test
+
+# Temporary
+tmp/
+temp/
+*.tmp
+
+# Documentation builds
+docs/_build/
+docs/.doctrees/

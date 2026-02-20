@@ -1,0 +1,26 @@
+# PhantomProxy Vishing 2.0 Dependencies
+
+# TTS
+TTS==0.21.0
+coqui-tts==0.28.0.dev0
+
+# Twilio
+twilio==8.11.0
+
+# LLM
+ollama==0.1.7
+
+# API
+fastapi==0.110.0
+uvicorn[standard]==0.27.1
+pydantic==2.6.3
+
+# Audio processing
+pydub==0.25.1
+soundfile==0.13.0
+
+# Utilities
+python-dotenv==1.0.1
+
+# Install: pip install -r requirements.txt
+# Note: Requires CUDA for GPU acceleration
