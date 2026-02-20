@@ -15,6 +15,40 @@ services:
       - proxy_data:/data
     environment:
       PHANTOM_DATABASE_PATH: /data/phantom.db
+      PHANTOM_AI_ENDPOINT: http://ai-service:8081
+    depends_on:
+      - ai-service
+    restart: unless-stopped
+
+  ai-service:
+    build:
+      context: ./ai_service
+      dockerfile: Dockerfile
+    ports:
+      - "8081:8081"
+    volumes:
+      - ai_data:/app/vector_store
+    environment:
+      LLM_PROVIDER: ollama
+      LLM_MODEL: llama3.1:70b
+      LLM_ENDPOINT: http://ollama:11434
+    depends_on:
+      - ollama
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
   postgres:
@@ -122,3 +156,5 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
+  ai_data:
+  ollama_data:
