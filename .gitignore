@@ -73,3 +73,6 @@ temp/
 # Documentation builds
 docs/_build/
 docs/.doctrees/
+
+# Stakpak session files
+.stakpak/session*
