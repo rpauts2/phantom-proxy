@@ -1,6 +1,9 @@
 //go:build ignore
 // +build ignore
 
+// Domain rotator временно отключен из-за изменений в lego v4 API
+// Требуется рефакторинг для работы с новыми типами
+
 package domain
 
 import (

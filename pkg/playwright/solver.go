@@ -1,10 +1,14 @@
 //go:build ignore
 // +build ignore
 
+// Captcha solver временно отключен из-за изменений в playwright-go API
+// Требуется рефакторинг для работы с новыми типами
+
 package playwright
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -94,12 +98,12 @@ func NewCaptchaSolver(logger *zap.Logger, config *SolverConfig) (*CaptchaSolver,
 	for i := 0; i < config.PoolSize; i++ {
 		ctx, err := browser.NewContext(playwright.BrowserNewContextOptions{
 			UserAgent: playwright.String(config.UserAgent),
-			Viewport: &playwright.ViewportSize{
+			Viewport: &playwright.Size{
 				Width:  config.Viewport.Width,
 				Height: config.Viewport.Height,
 			},
-			JavaEnabled:   playwright.Bool(true),
-			Screen: &playwright.ViewportSize{
+			IsEnabled:   playwright.Bool(true),
+			Screen: &playwright.Size{
 				Width: config.Viewport.Width,
 				Height: config.Viewport.Height,
 			},
@@ -158,14 +162,28 @@ func (s *CaptchaSolver) SolveReCAPTCHA(pageURL, siteKey string) (*CaptchaResult,
 
 	// Ожидание iframe reCAPTCHA
 	frameSelector := fmt.Sprintf("iframe[src*='recaptcha'][src*='%s']", siteKey)
-	captchaFrame, err := page.WaitForFrame(frameSelector, playwright.PageWaitForFrameOptions{
-		Timeout: playwright.Float64(30000),
-	})
-	if err != nil {
+
+	// Ждём появления фрейма
+	var captchaFrame playwright.Frame
+	for i := 0; i < 30; i++ {
+		frames := page.Frames()
+		for _, f := range frames {
+			if strings.Contains(f.URL(), "recaptcha") && strings.Contains(f.URL(), siteKey) {
+				captchaFrame = f
+				break
+			}
+		}
+		if captchaFrame != nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if captchaFrame == nil {
 		return &CaptchaResult{
 			Success: false,
-			Error:   fmt.Errorf("reCAPTCHA iframe not found: %w", err),
-		}, err
+			Error:   fmt.Errorf("reCAPTCHA iframe not found after 30s"),
+		}, fmt.Errorf("iframe not found")
 	}
 
 	s.logger.Debug("reCAPTCHA iframe found, clicking checkbox")
@@ -228,14 +246,28 @@ func (s *CaptchaSolver) SolveHCaptcha(pageURL, siteKey string) (*CaptchaResult, 
 
 	// Ожидание iframe hCaptcha
 	frameSelector := fmt.Sprintf("iframe[src*='hcaptcha'][src*='%s']", siteKey)
-	captchaFrame, err := page.WaitForFrame(frameSelector, playwright.PageWaitForFrameOptions{
-		Timeout: playwright.Float64(30000),
-	})
-	if err != nil {
+
+	// Ждём появления фрейма
+	var captchaFrame playwright.Frame
+	for i := 0; i < 30; i++ {
+		frames := page.Frames()
+		for _, f := range frames {
+			if strings.Contains(f.URL(), "hcaptcha") && strings.Contains(f.URL(), siteKey) {
+				captchaFrame = f
+				break
+			}
+		}
+		if captchaFrame != nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+
+	if captchaFrame == nil {
 		return &CaptchaResult{
 			Success: false,
-			Error:   fmt.Errorf("hCaptcha iframe not found: %w", err),
-		}, err
+			Error:   fmt.Errorf("hCaptcha iframe not found after 30s"),
+		}, fmt.Errorf("iframe not found")
 	}
 
 	// Клик по чекбоксу
@@ -318,9 +350,7 @@ func (s *CaptchaSolver) waitForHCaptchaToken(page playwright.Page) (string, erro
 
 // injectStealth внедряет скрипты для скрытия headless
 func (s *CaptchaSolver) injectStealth(page playwright.Page) error {
-	_, err := page.AddInitScript(playwright.PageAddInitScriptOptions{
-		Content: playwright.String(s.stealthScript),
-	})
+	_, err := page.AddInitScript(s.stealthScript)
 	return err
 }
 
