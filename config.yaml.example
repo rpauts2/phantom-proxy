@@ -1,0 +1,71 @@
+# PhantomProxy v14.0 - Example Configuration
+# Copy to config.yaml and customize
+
+# Network
+bind_ip: "0.0.0.0"
+https_port: 8443
+http3_port: 8443
+http3_enabled: true
+
+# Domain & Certificates
+domain: "phantom.local"
+auto_cert: false
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+
+# Database
+database_path: "./phantom.db"
+database_type: "sqlite"
+
+# Redis
+redis_addr: "localhost:6379"
+redis_password: ""
+redis_db: 0
+
+# Phishlets
+phishlets_path: "./configs/phishlets"
+
+# API
+api_enabled: true
+api_port: 8080
+api_key: "change-me-to-secure-random-string"
+
+# Multi-tenant
+multi_tenant_enabled: false
+
+# Risk Score
+risk_score_enabled: true
+risk_threshold_high: 80
+risk_threshold_critical: 95
+
+# Vishing/Smishing
+vishing_enabled: false
+
+# Zero-Trust mTLS
+mtls_enabled: false
+mtls_verify_client: true
+
+# Authentication
+auth_enabled: false
+auth_provider: "keycloak"
+
+# FSTEC Compliance
+fstec_enabled: false
+fstec_encrypt_logs: true
+
+# AI Service
+ai_service_enabled: true
+ai_service_url: "http://localhost:8081"
+
+# C2 Integration
+v13:
+  c2:
+    sliver:
+      enabled: false
+      server_url: ""
+      operator_token: ""
+
+# Logging
+debug: false
+log_path: "./logs/phantom.log"
+log_level: "info"

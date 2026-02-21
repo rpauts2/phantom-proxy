@@ -1,296 +1,103 @@
-# =============================================================================
-# PhantomProxy Pro - Professional .gitignore
-# Last Updated: February 20, 2026
-# =============================================================================
+# PhantomProxy v14.0 - .gitignore
 
-# -----------------------------------------------------------------------------
-# Git & Version Control
-# -----------------------------------------------------------------------------
-.git/
-.gitignore
-*.orig
-*.patch
-*.diff
-
-# -----------------------------------------------------------------------------
-# Python
-# -----------------------------------------------------------------------------
-# Bytecode
-__pycache__/
-*.py[cod]
-*$py.class
-*.pyo
-.Python
-
-# Virtual environments
-venv/
-env/
-ENV/
-.venv/
-.conda/
-
-# Distribution / packaging
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-*.egg
-
-# Installers
-*.exe
-*.dmg
-*.app
-
-# Package managers
-pip-log.txt
-pip-delete-this-directory.txt
-
-# -----------------------------------------------------------------------------
-# Go
-# -----------------------------------------------------------------------------
 # Binaries
 *.exe
 *.exe~
 *.dll
 *.so
 *.dylib
-*.test
-*.out
+phantom-proxy
+phantom-proxy.exe
 
-# Dependency directories
-vendor/
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
 
 # Go workspace file
 go.work
 
-# Output files
-*.out
-*.test
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv
+*.egg-info/
+dist/
+build/
 
-# Coverage
-*.cover
-*.coverprofile
+# Node
+node_modules/
+.next/
+out/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
 
-# -----------------------------------------------------------------------------
-# IDE & Editors
-# -----------------------------------------------------------------------------
-# JetBrains IDEs
+# IDE
 .idea/
-*.iml
-*.ipr
-*.iws
-
-# VS Code
 .vscode/
-*.code-workspace
-
-# Sublime Text
-*.sublime-project
-*.sublime-workspace
-*.sublime-*
-
-# Vim
 *.swp
 *.swo
 *~
-.netrwhist
 
-# Emacs
-*~
-\#*\#
-/.emacs.desktop
-/.emacs.desktop.lock
-*.elc
-
-# macOS
+# OS
 .DS_Store
-.AppleDouble
-.LSOverride
-._*
-
-# Windows
 Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-*.cab
-*.msi
-*.msix
-*.msm
-*.msp
-*.lnk
 
-# Temporary files
-*.tmp
-*.temp
-*.bak
-*.swp
-
-# -----------------------------------------------------------------------------
-# Logs & Databases
-# -----------------------------------------------------------------------------
-*.log
+# Logs
 logs/
+*.log
+
+# Database
 *.db
 *.sqlite
 *.sqlite3
-*.sqlite3-shm
-*.sqlite3-wal
 
-# -----------------------------------------------------------------------------
-# Environment & Configuration
-# -----------------------------------------------------------------------------
-# Environment variables
+# Certs (keep examples)
+certs/*.pem
+certs/*.key
+!certs/.gitkeep
+
+# Config with secrets
+config.local.yaml
 .env
 .env.local
 .env.*.local
-.env.development
-.env.test
-.env.production
 
-# Configuration files with secrets
-config.local.yaml
-config.local.json
-*.local.yaml
-*.local.json
-*.secret.yaml
-*.secret.json
-secrets/
-credentials/
-
-# Keys and certificates
-*.key
-*.pem
-*.crt
-*.cer
-*.der
-*.pfx
-*.p12
-*.jks
-keystore.jks
-truststore.jks
-
-# AWS
-.aws/
-aws_credentials
-
-# -----------------------------------------------------------------------------
-# Reports & Exports
-# -----------------------------------------------------------------------------
-reports/
-invoices/
-proposals/
-contracts/
-evidence/
-siem_exports/
-scheduler_logs/
-notifications/
-compliance_logs/
-backups/
-*.pdf
-*.xlsx
-*.docx
-
-# -----------------------------------------------------------------------------
-# Test & Coverage
-# -----------------------------------------------------------------------------
-test_data/
-*.test
-.coverage
-htmlcov/
-.pytest_cache/
-.tox/
-.nox/
-coverage.xml
-*.cover
-
-# -----------------------------------------------------------------------------
-# Documentation
-# -----------------------------------------------------------------------------
-docs/_build/
-docs/.doctrees/
-*.ipynb_checkpoints
-
-# -----------------------------------------------------------------------------
-# Build & Compilation
-# -----------------------------------------------------------------------------
-bin/
-obj/
-*.o
-*.a
-*.class
-
-# -----------------------------------------------------------------------------
-# Node.js (if applicable)
-# -----------------------------------------------------------------------------
-node_modules/
-npm-debug.log
-yarn-error.log
-package-lock.json
-yarn.lock
-
-# -----------------------------------------------------------------------------
 # Docker
-# -----------------------------------------------------------------------------
 docker-compose.override.yml
-.docker/
 
-# -----------------------------------------------------------------------------
-# Kubernetes
-# -----------------------------------------------------------------------------
-*.kubeconfig
-.kube/
+# Temporary files
+tmp/
+temp/
+*.tmp
 
-# -----------------------------------------------------------------------------
-# Stakpak Session Files
-# -----------------------------------------------------------------------------
-.stakpak/
-.stakpak/session*
+# Uploads
+uploads/
+payloads/
 
-# -----------------------------------------------------------------------------
-# Branding (keep placeholders)
-# -----------------------------------------------------------------------------
-branding/*.png
-branding/*.ico
-branding/*.svg
-!branding/.gitkeep
+# Reports
+reports/
+exports/
 
-# -----------------------------------------------------------------------------
-# Config Templates (keep examples)
-# -----------------------------------------------------------------------------
-config.py
-!config.example.yaml
-!config.example.json
+# Vector store
+ai_service/vector_store/
+*.chroma
 
-# -----------------------------------------------------------------------------
-# Sensitive Directories
-# -----------------------------------------------------------------------------
-.internal/
-.private/
-backup/
-dump/
-export/
+# Ollama data
+ollama_data/
 
-# -----------------------------------------------------------------------------
-# OS Generated Files
-# -----------------------------------------------------------------------------
-# Thumbnail caches
-thumbs.db
-# Desktop configuration
-desktop.ini
-# Spotlight
-.Spotlight-V100
-.Trashes
-# Jupyter
-.ipynb_checkpoints
+# Redis dump
+dump.rdb
 
-# End of .gitignore
+# Coverage
+coverage/
+coverage.txt
+*.cover

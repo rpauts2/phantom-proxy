@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "phantomproxy.fullname" . }}
+  labels:
+    {{- include "phantomproxy.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "phantomproxy.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "phantomproxy.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "phantomproxy.serviceAccountName" . }}
+      containers:
+        - name: phantom-proxy
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: https
+              containerPort: {{ .Values.config.httpsPort }}
+              protocol: TCP
+            - name: api
+              containerPort: {{ .Values.config.apiPort }}
+              protocol: TCP
+          env:
+            - name: PHANTOM_DOMAIN
+              value: {{ .Values.config.domain | quote }}
+            - name: PHANTOM_DEBUG
+              value: {{ .Values.config.debug | quote }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.yaml
+              subPath: config.yaml
+            - name: certs
+              mountPath: /app/certs
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "phantomproxy.fullname" . }}-config
+        - name: certs
+          secret:
+            secretName: {{ include "phantomproxy.fullname" . }}-certs

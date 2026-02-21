@@ -1,159 +1,81 @@
-# 🤝 CONTRIBUTING GUIDELINES
+# Contributing to PhantomProxy v14.0
 
-Thank you for your interest in contributing to PhantomProxy Pro!
+Thank you for contributing to PhantomProxy!
 
-## ⚠️ IMPORTANT NOTICE
-
-**PhantomProxy Pro is a proprietary security tool.** By contributing, you agree to:
-
-1. **Legal Use Only** — Your contributions will be used only for legitimate security testing
-2. **No Malicious Features** — Do not submit code designed for malicious purposes
-3. **Ethical Standards** — Follow our [Ethical Boundaries](docs/ETHICAL_BOUNDARIES.md)
-
-## 📋 HOW TO CONTRIBUTE
-
-### 1. Reporting Issues
-
-**Found a bug?** Open an issue with:
-- Clear description
-- Steps to reproduce
-- Expected vs actual behavior
-- Screenshots/logs (if applicable)
-- Environment details (OS, Python version, etc.)
-
-### 2. Feature Requests
-
-**Have an idea?** Open an issue with:
-- Feature description
-- Use case
-- Benefits
-- Potential implementation approach
-
-### 3. Code Contributions
-
-**Want to submit code?**
-
-1. **Fork** the repository
-2. **Create a branch** (`git checkout -b feature/AmazingFeature`)
-3. **Make your changes**
-4. **Test thoroughly**
-5. **Commit** (`git commit -m 'Add AmazingFeature'`)
-6. **Push** (`git push origin feature/AmazingFeature`)
-7. **Open a Pull Request**
-
-### 4. Documentation
-
-**Improve docs?** We welcome:
-- Typos fixes
-- Clarifications
-- New guides
-- Translations
-
-## 📝 CODE STYLE
-
-### Python
-
-```python
-# Follow PEP 8
-# Use type hints
-# Add docstrings
-
-def example_function(param: str) -> bool:
-    """Example docstring."""
-    return True
-```
-
-### Testing
-
-```bash
-# Run tests before submitting
-pytest tests/
-
-# Check code style
-black modules/
-flake8 modules/
-
-# Type checking
-mypy modules/
-```
-
-## 🔍 PULL REQUEST PROCESS
-
-1. **Review** — Maintainers review your PR
-2. **Tests** — Automated tests run
-3. **Feedback** — You may be asked for changes
-4. **Approval** — PR is approved
-5. **Merge** — Changes are merged
-
-## 📜 CODE OF CONDUCT
-
-### Our Pledge
-
-We pledge to make participation in our project a harassment-free experience for everyone.
-
-### Expected Behavior
+## Code of Conduct
 
 - Be respectful
-- Be constructive
-- Be inclusive
-- Accept constructive criticism
+- Follow ethical guidelines
+- Only test systems you own or have permission to test
 
-### Unacceptable Behavior
+## Development Setup
 
-- Harassment
-- Discrimination
-- Personal attacks
-- Trolling
+### 1. Fork and Clone
 
-### Enforcement
+```bash
+git clone https://github.com/YOUR_USERNAME/phantom-proxy.git
+cd phantom-proxy
+```
 
-Violations will result in:
-1. Warning
-2. Temporary ban
-3. Permanent ban
+### 2. Install Dependencies
 
-Report violations to: conduct@phantomseclabs.com
+```bash
+# Go
+go mod download
 
-## 📚 RESOURCES
+# Python
+pip install -r requirements.txt
 
-- [Project Overview](docs/PROJECT_OVERVIEW.md)
-- [Ethical Boundaries](docs/ETHICAL_BOUNDARIES.md)
-- [Security Policy](SECURITY.md)
-- [License](LICENSE)
+# Node.js
+cd frontend && npm install
+```
 
-## 🎯 AREAS WE NEED HELP
+### 3. Run Tests
 
-### High Priority
+```bash
+# All tests
+make test
 
-- [ ] API Documentation (Swagger/OpenAPI)
-- [ ] Unit Tests
-- [ ] Integration Tests
-- [ ] CI/CD Pipeline
-- [ ] Mobile App (React Native)
-- [ ] Desktop App (Electron)
+# Go tests
+make test-go
 
-### Medium Priority
+# Python tests
+make test-python
+```
 
-- [ ] Multi-language Support (i18n)
-- [ ] Template Library
-- [ ] Knowledge Base
-- [ ] Video Tutorials
+### 4. Code Style
 
-### Low Priority
+**Go:**
+```bash
+go fmt ./...
+golangci-lint run
+```
 
-- [ ] UI/UX Improvements
-- [ ] Performance Optimizations
-- [ ] Additional Integrations
+**Python:**
+```bash
+black .
+flake8
+```
 
-## 💬 QUESTIONS?
+**TypeScript:**
+```bash
+npm run lint
+```
 
-**Get in touch:**
-- Email: dev@phantomseclabs.com
-- GitHub Issues
-- Discussions tab
+## Pull Request Process
 
----
+1. Create feature branch
+2. Make changes
+3. Run tests
+4. Update documentation
+5. Submit PR
 
-**Thank you for contributing to PhantomProxy Pro!** 🚀
+## Security
 
-**© 2026 PhantomSec Labs**
+- Report vulnerabilities privately
+- Do not expose sensitive information
+- Follow responsible disclosure
+
+## License
+
+By contributing, you agree to license your work under MIT License.

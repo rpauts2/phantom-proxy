@@ -15,6 +15,7 @@ type SessionData struct {
 	Cookies     []*database.Cookie
 	PhishletID  string
 	UserAgent   string
+	TargetURL   string
 }
 
 // Adapter interface for C2 framework integration

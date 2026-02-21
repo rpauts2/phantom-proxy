@@ -1,433 +1,310 @@
-# 👻 PHANTOMPROXY PRO
+# 👻 PHANTOMPROXY v14.0
 
 **Enterprise Red Team Simulation Platform**
 
-[![Version](https://img.shields.io/badge/version-13.0-blue)]()
-[![License](https://img.shields.io/badge/license-Proprietary-green)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.8%2B-blue)]()
-[![CI/CD](https://github.com/rpauts2/phantom-proxy/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/rpauts2/phantom-proxy/actions)
-[![Issues](https://img.shields.io/github/issues/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/issues)
-[![Stars](https://img.shields.io/github/stars/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/stargazers)
-[![Forks](https://img.shields.io/github/forks/rpauts2/phantom-proxy)](https://github.com/rpauts2/phantom-proxy/network)
+[![Version](https://img.shields.io/badge/version-14.0.0-blue)]()
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![Go](https://img.shields.io/badge/go-1.21+-blue)]()
+[![Python](https://img.shields.io/badge/python-3.11+-blue)]()
+[![CI/CD](https://github.com/rpauts2/phantom-proxy/actions/workflows/ci-cd.yml/badge.svg)]()
 
 ---
 
-## 📖 ОПИСАНИЕ
+## ⚡ QUICK START
 
-**PhantomProxy Pro** — профессиональная платформа для симуляции Red Team атак, тестирования на проникновение и оценки безопасности организации.
-
-**Легальное использование:** Только для аккредитованных организаций с письменными разрешениями (RoE).
-
----
-
-## ⚠️ LEGAL DISCLAIMER
-
-> **ВАЖНО:** Этот инструмент предназначен ТОЛЬКО для легального тестирования безопасности.
->
-> **Разрешено:**
-> - ✅ Тестирование с письменного разрешения владельца
-> - ✅ Red Team операции по договору
-> - ✅ Обучение по кибербезопасности
-> - ✅ Исследовательские цели
->
-> **Запрещено:**
-> - ❌ Несанкционированный доступ
-> - ❌ Кража данных
-> - ❌ Мошенничество
-> - ❌ Любое использование без письменного разрешения
->
-> **Используя этот инструмент, вы подтверждаете наличие письменного разрешения (RoE) от владельца тестируемых систем.**
-
----
-
-## 🎯 ВОЗМОЖНОСТИ
-
-### 🔐 Security Features
-- [x] 2FA TOTP Authentication
-- [x] Session Management
-- [x] Brute Force Protection
-- [x] Encrypted Audit Logging
-- [x] Role-Based Access Control
-
-### 📊 Analytics & Reporting
-- [x] Real-Time Dashboard
-- [x] Advanced Analytics
-- [x] Custom Report Generator
-- [x] PDF Report Export
-- [x] SIEM Integration (Splunk, ELK, QRadar)
-
-### 💼 Business Features
-- [x] Client Management
-- [x] Campaign Scheduling
-- [x] Auto-Reports
-- [x] Billing & Invoicing
-- [x] Proposal Generator
-- [x] Contract Templates (RoE, NDA)
-
-### 📧 Notifications
-- [x] Email Notifications
-- [x] Telegram Bot
-- [x] Webhooks (Slack, SIEM)
-- [x] Campaign Alerts
-- [x] Session Alerts
-
-### 👥 Team Management
-- [x] Multi-User Support
-- [x] Roles & Permissions
-- [x] Task Assignment
-- [x] Activity Logging
-- [x] Team Statistics
-
-### 🎨 Branding
-- [x] White-Label UI
-- [x] Custom Colors
-- [x] Company Logo
-- [x] Custom Texts
-- [x] Multi-Language Support (RU/EN)
-
----
-
-## 📁 СТРУКТУРА ПРОЕКТА
-
-```
-phantom-proxy/
-├── README.md                    # Документация
-├── LICENSE                      # Лицензия
-├── .gitignore                   # Git ignore
-├── config.example.yaml          # Пример конфигурации
-├── requirements.txt             # Python зависимости
-│
-├── phantomproxy_v12_1_pro.py    # Главная программа (Branded UI)
-│
-├── modules/
-│   ├── v12_siem.py              # SIEM Integration
-│   ├── v12_scheduler.py         # Campaign Scheduler
-│   ├── v12_notifications.py     # Notifications (Email, Telegram)
-│   ├── v12_security.py          # Security (2FA, Sessions)
-│   ├── v12_team.py              # Team Management
-│   ├── v12_analytics.py         # Analytics Dashboard
-│   ├── v12_billing.py           # Billing & Invoices
-│   ├── v12_proposals.py         # Proposals & Contracts
-│   ├── v12_reporting.py         # PDF Reports
-│   └── v12_compliance.py        # Compliance Logging
-│
-├── templates/                   # Фишлеты
-│   ├── microsoft_login.html
-│   ├── google_login.html
-│   └── ...
-│
-├── branding/                    # Branding assets
-├── reports/                     # PDF отчёты
-├── invoices/                    # Invoices
-├── proposals/                   # Proposals
-├── contracts/                   # Contracts
-└── ...
-```
-
----
-
-## 🚀 БЫСТРЫЙ СТАРТ
-
-### 1. Сборка (Go установлен)
-
+### Linux (1 command):
 ```bash
-go build -o phantom-proxy.exe ./cmd/phantom-proxy
+sudo ./install.sh
 ```
 
-### 2. Запуск
-
-**Вариант A — локально**
-```bash
-# Создайте certs/ и config.yaml (см. config.yaml)
-./phantom-proxy --config config.yaml
+### Windows (1 command):
+```powershell
+.\install.ps1
 ```
 
-**Вариант B — Docker (минимум)**
-```bash
-docker-compose -f docker-compose.minimal.yml up -d
-```
-
-**Вариант C — полный стек**
+### Docker:
 ```bash
 docker-compose up -d
 ```
 
-### 3. Frontend (опционально)
+---
 
+## 🎯 FEATURES
+
+### Core
+- ✅ **AiTM Reverse Proxy** - HTTP/HTTPS/HTTP3 with TLS 1.3
+- ✅ **Session Management** - Redis-backed with cookie capture
+- ✅ **Phishlet Engine** - 10+ pre-configured templates
+- ✅ **2FA/MFA Bypass** - Token interception and replay
+
+### AI/ML
+- ✅ **LangGraph Agents** - 4 autonomous AI agents
+- ✅ **RAG System** - ChromaDB vector store
+- ✅ **Smart Scoring** - 8-factor behavioral analysis
+- ✅ **Auto-Phishlet** - AI-generated phishing templates
+
+### Enterprise
+- ✅ **Multi-Tenant** - Full isolation with quotas
+- ✅ **Zero-Trust mTLS** - Client certificate authentication
+- ✅ **Auth Integration** - Keycloak/Zitadel support
+- ✅ **FSTEC Compliance** - GOST encryption for logs
+
+### Attack Simulation
+- ✅ **Vishing** - Voice phishing with Twilio/SMS.ru
+- ✅ **Smishing** - SMS phishing campaigns
+- ✅ **C2 Integration** - Sliver, Empire, Cobalt Strike
+
+---
+
+## 📦 INSTALLATION
+
+### Automated Install:
+
+**Linux:**
 ```bash
-cd frontend
-npm install
-NEXT_PUBLIC_API_URL=http://localhost:8080 NEXT_PUBLIC_API_KEY=change-me-to-secure-random-string npm run dev
+git clone https://github.com/rpauts2/phantom-proxy.git
+cd phantom-proxy
+sudo ./install.sh
 ```
 
-### Доступ
+**Windows:**
+```powershell
+git clone https://github.com/rpauts2/phantom-proxy.git
+cd phantom-proxy
+.\install.ps1
+```
 
-| Сервис | URL |
-|--------|-----|
-| Proxy (HTTPS) | https://localhost:443 |
-| API | http://localhost:8080 |
-| Dashboard | http://localhost:3000 (после `npm run dev`) |
-| Health | http://localhost:8080/health |
+### Manual Install:
+
+**1. Dependencies:**
+```bash
+# Go 1.21+
+go mod download
+
+# Python 3.11+
+pip install -r requirements.txt
+
+# Node.js 20+
+cd frontend && npm install
+```
+
+**2. Generate Certificates:**
+```bash
+mkdir -p certs
+openssl req -x509 -newkey rsa:4096 \
+  -keyout certs/key.pem -out certs/cert.pem \
+  -days 365 -nodes
+```
+
+**3. Build:**
+```bash
+go build -o phantom-proxy ./cmd/phantom-proxy-v14
+```
+
+**4. Run:**
+```bash
+./phantom-proxy --config config.yaml
+```
 
 ---
 
-## 📖 ДОКУМЕНТАЦИЯ
+## 🚀 USAGE
 
-### Полная документация:
+### Console UI:
+```bash
+python console.py
+```
 
-| Документ | Описание |
-|----------|----------|
-| [V12_5_PRO++++_ENTERPRISE.md](./docs/V12_5_PRO++++_ENTERPRISE.md) | Полное руководство v12.5 |
-| [API.md](./docs/API.md) | API документация |
-| [DEPLOYMENT.md](./docs/DEPLOYMENT.md) | Руководство по развёртыванию |
-| [SECURITY.md](./docs/SECURITY.md) | Security policy |
-| [CONTRIBUTING.md](./docs/CONTRIBUTING.md) | Contribution guidelines |
+**Commands:**
+```
+help          - Show help
+status        - System status
+dashboard     - Main dashboard
+sessions      - Active sessions
+phishlets     - Loaded phishlets
+logs          - System logs
+quit          - Exit
+```
 
-### Quick Start Guides:
+### Web Interface:
+- **Frontend:** http://localhost:3000
+- **API:** http://localhost:8080
+- **Proxy:** https://localhost:8443
 
-- [Installation Guide](./docs/guides/installation.md)
-- [Configuration Guide](./docs/guides/configuration.md)
-- [First Campaign Guide](./docs/guides/first-campaign.md)
-- [SIEM Integration Guide](./docs/guides/siem-integration.md)
+### Docker:
+```bash
+# Start all services
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+```
+
+### Makefile Commands:
+```bash
+make help         # Show all commands
+make build        # Build binary
+make test         # Run tests
+make docker       # Start Docker
+make health       # Health check
+make backup       # Create backup
+```
 
 ---
 
-## 🔧 КОНФИГУРАЦИЯ
+## 📁 PROJECT STRUCTURE
 
-### Базовая настройка (config.yaml):
-
-```yaml
-# Company Information
-company:
-  name: "PhantomSec Labs"
-  email: "info@phantomseclabs.com"
-  phone: "+7 (XXX) XXX-XX-XX"
-  website: "https://phantomseclabs.com"
-
-# Database
-database:
-  path: "./phantom.db"
-  backup_enabled: true
-  backup_interval: "daily"
-
-# Server
-server:
-  api_port: 8080
-  panel_port: 3000
-  https_port: 8443
-
-# Email Notifications
-email:
-  enabled: false
-  smtp_server: "smtp.gmail.com"
-  smtp_port: 587
-  username: ""
-  password: ""
-  from_email: ""
-
-# Telegram Notifications
-telegram:
-  enabled: false
-  bot_token: ""
-  chat_id: ""
-
-# SIEM Integration
-siem:
-  splunk:
-    enabled: false
-    hec_url: ""
-    hec_token: ""
-  elk:
-    enabled: false
-    es_url: ""
-    index: ""
-  syslog:
-    enabled: false
-    server: ""
-    port: 514
+```
+phantom-proxy/
+├── cmd/phantom-proxy-v14/    # Go entry point
+├── core/proxy/               # AiTM engine
+├── internal/                 # Services
+│   ├── tenant/              # Multi-tenant
+│   ├── risk/                # Risk scoring
+│   ├── vishing/             # Voice phishing
+│   ├── c2/                  # C2 integration
+│   ├── mtls/                # Zero-trust
+│   ├── auth/                # Authentication
+│   └── fstec/                # FSTEC compliance
+├── ai_service/              # AI service (LangGraph)
+├── api/                     # FastAPI backend
+├── frontend/                # Next.js dashboard
+├── configs/phishlets/       # Phishlet configs
+├── deploy/                  # DevOps configs
+├── install.sh               # Linux installer
+├── install.ps1              # Windows installer
+└── docker-compose.yml       # Docker stack
 ```
 
 ---
 
 ## 📊 API ENDPOINTS
 
-### Authentication:
-```
-POST /api/v1/login          # Login
-POST /api/v1/logout         # Logout
-POST /api/v1/2fa/enable     # Enable 2FA
-POST /api/v1/2fa/verify     # Verify 2FA
-```
+### Core (59 endpoints):
+- `GET /health` - Health check
+- `GET /api/v1/stats` - Statistics
+- `GET/POST /api/v1/sessions` - Session management
+- `GET/POST /api/v1/phishlets` - Phishlet management
+- `POST /api/v1/risk/events` - Risk scoring
+- `GET/POST /api/v1/fstec/audit` - Audit logs
 
-### Campaigns:
-```
-GET  /api/v1/campaigns      # List campaigns
-POST /api/v1/campaigns      # Create campaign
-GET  /api/v1/campaigns/:id  # Get campaign
-PUT  /api/v1/campaigns/:id  # Update campaign
-DELETE /api/v1/campaigns/:id # Delete campaign
-```
-
-### Sessions:
-```
-GET  /api/v1/sessions       # List sessions
-GET  /api/v1/sessions/:id   # Get session
-DELETE /api/v1/sessions/:id # Delete session
-POST /api/v1/credentials    # Capture credentials
-```
-
-### Analytics:
-```
-GET  /api/v1/analytics/overview      # Overview stats
-GET  /api/v1/analytics/trends        # Daily trends
-GET  /api/v1/analytics/services      # Service breakdown
-GET  /api/v1/analytics/dashboard      # Full dashboard JSON
-```
-
-### Billing:
-```
-GET  /api/v1/invoices      # List invoices
-POST /api/v1/invoices      # Create invoice
-GET  /api/v1/invoices/:id  # Get invoice
-PUT  /api/v1/invoices/:id/pay # Mark as paid
-```
-
-### Reports:
-```
-POST /api/v1/reports/generate  # Generate PDF report
-GET  /api/v1/reports/:id        # Get report
-DELETE /api/v1/reports/:id      # Delete report
-```
+### AI Service:
+- `POST /v1/generate/email` - Generate phishing email
+- `POST /v1/generate/phishlet` - Generate phishlet
+- `POST /v1/rag/search` - RAG search
+- `POST /api/v1/agents/run-campaign` - AI campaign
 
 ---
 
-## 🧪 ТЕСТИРОВАНИЕ
-
-### Запуск тестов:
+## 🧪 TESTING
 
 ```bash
-# Unit tests
-pytest tests/unit/
+# All tests
+make test
 
-# Integration tests
-pytest tests/integration/
+# Go tests
+make test-go
+
+# Python tests
+make test-python
+
+# Health check
+make health
 
 # Coverage
-pytest --cov=modules tests/
+go test -v -cover ./...
 ```
 
-### Тестирование модулей:
+---
 
+## 🔧 MAINTENANCE
+
+### Backup:
 ```bash
-# Test SIEM module
-python3 modules/v12_siem.py
+# Create backup
+make backup
 
-# Test Scheduler
-python3 modules/v12_scheduler.py
+# Or manually
+python backup.py backup
 
-# Test Security
-python3 modules/v12_security.py
+# List backups
+python backup.py list
 
-# Test Notifications
-python3 modules/v12_notifications.py
+# Restore
+python backup.py restore backup_20260220.tar.gz
 ```
 
----
-
-## 🤝 CONTRIBUTING
-
-### Как внести вклад:
-
-1. Fork репозиторий
-2. Создайте feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit изменения (`git commit -m 'Add some AmazingFeature'`)
-4. Push в branch (`git push origin feature/AmazingFeature`)
-5. Откройте Pull Request
-
-### Code Style:
-
+### Health Check:
 ```bash
-# Format code
-black modules/
+# Script
+./healthcheck.sh
 
-# Lint code
-flake8 modules/
+# Or make
+make health
+```
 
-# Type checking
-mypy modules/
+### Update:
+```bash
+git pull
+make build
+sudo systemctl restart phantomproxy
 ```
 
 ---
 
-## 📝 CHANGELOG
+## 📖 DOCUMENTATION
 
-### v12.5 PRO++++ (2026-02-20)
-- ✅ SIEM Integration (Splunk, ELK, QRadar, Syslog)
-- ✅ Campaign Scheduler
-- ✅ Auto-Reports
-- ✅ Automated Tasks
-
-### v12.4 PRO+++ (2026-02-20)
-- ✅ Email Notifications
-- ✅ Telegram Bot
-- ✅ Webhooks
-- ✅ 2FA TOTP
-- ✅ Session Management
-
-### v12.3 PRO++ (2026-02-20)
-- ✅ Team Management
-- ✅ Advanced Analytics
-- ✅ Dashboard
-
-### v12.2 PRO+ (2026-02-20)
-- ✅ Billing & Invoices
-- ✅ Proposal Generator
-- ✅ Contract Templates
-
-### v12.1 PRO (2026-02-20)
-- ✅ White-Label Branding
-- ✅ Client Portal
-- ✅ Custom Colors
-
-### v12.0 (2026-02-20)
-- ✅ Professional Reporting
-- ✅ Compliance Logging
-- ✅ Evidence Collection
-
-[Full Changelog](./CHANGELOG.md)
+- **[API Documentation](docs/API.md)** - Full API reference
+- **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
+- **[Phishlet Guide](docs/PHISHLETS.md)** - Creating phishlets
+- **[Architecture](docs/ARCHITECTURE.md)** - System architecture
+- **[Security](SECURITY.md)** - Security policy
+- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
 
 ---
 
-## 👥 AUTHORS
+## ⚠️ LEGAL DISCLAIMER
 
-- **Lead Developer:** PhantomSec Labs
-- **Contributors:** [List of contributors]
+This software is for **authorized security testing only**.
+
+**Required:**
+- ✅ Written permission from system owners
+- ✅ Signed Rules of Engagement (RoE)
+- ✅ Proper legal authorization
+
+**Prohibited:**
+- ❌ Unauthorized access
+- ❌ Credential theft
+- ❌ Fraud or identity theft
+
+By using this software, you agree to comply with all applicable laws.
+
+---
+
+## 🏆 VERSIONS
+
+| Version | Status | Features |
+|---------|--------|----------|
+| v14.0.0 | ✅ Current | Full enterprise stack |
+| v13.0.0 | ⚠️ Legacy | Basic multi-tenant |
+| v12.0.0 | ❌ EOL | Initial release |
 
 ---
 
 ## 📞 SUPPORT
 
-- **Email:** support@phantomseclabs.com
-- **Documentation:** https://docs.phantomseclabs.com
-- **Issues:** https://github.com/phantom-proxy/issues
+- **GitHub Issues:** https://github.com/rpauts2/phantom-proxy/issues
+- **Security:** security@phantomseclabs.com
+- **Documentation:** https://docs.phantomproxy.io
 
 ---
 
-## 📜 LICENSE
+## 📄 LICENSE
 
-**Proprietary License**
-
-Этот инструмент предназначен ТОЛЬКО для легального использования с письменного разрешения владельца тестируемых систем.
-
-Полный текст лицензии: [LICENSE](./LICENSE)
-
----
-
-## ⚠️ SECURITY
-
-Для сообщения об уязвимостях: security@phantomseclabs.com
-
-Политика безопасности: [SECURITY.md](./docs/SECURITY.md)
+MIT License - see [LICENSE](LICENSE) for details.
 
 ---
 

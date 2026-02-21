@@ -122,7 +122,7 @@ func main() {
 	eventBus := events.NewBus()
 	httpProxy.SetEventBus(eventBus)
 
-	c2Manager := buildC2Manager(&cfg.V13)
+	c2Manager := buildC2Manager(&cfg.V13, logger)
 	c2Module := modules.NewC2IntegrationModule(c2Manager, db, logger)
 	if err := c2Module.Init(context.Background(), eventBus); err != nil {
 		logger.Warn("C2 integration module init failed", zap.Error(err))
@@ -195,7 +195,7 @@ func main() {
 	color.Green("\n[*] Shutdown complete")
 }
 
-func buildC2Manager(v13 *config.V13Config) *c2.Manager {
+func buildC2Manager(v13 *config.V13Config, logger *zap.Logger) *c2.Manager {
 	var adapters []c2.Adapter
 
 	// Sliver
@@ -206,7 +206,7 @@ func buildC2Manager(v13 *config.V13Config) *c2.Manager {
 				ServerURL:     getStr(v13.C2.Sliver, "server_url"),
 				OperatorToken: getStr(v13.C2.Sliver, "operator_token"),
 				CallbackHost:  getStr(v13.C2.Sliver, "callback_host"),
-			}))
+			}, logger))
 		}
 	}
 

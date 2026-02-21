@@ -1,11 +1,14 @@
 """
-PhantomProxy AI Service - LangGraph + Llama-3.1 Integration
+PhantomProxy AI Service v13.0 - LangGraph + Llama-3.1 + RAG
 Enterprise AI for phishing campaign generation and analysis
 """
 import os
 import asyncio
+import json
+import hashlib
 from typing import Dict, List, Any, Optional
 from contextlib import asynccontextmanager
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +19,7 @@ import httpx
 try:
     from langgraph.graph import StateGraph, END
     from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
+    from langchain_core.embeddings import Embeddings
     LANGGRAPH_AVAILABLE = True
 except ImportError:
     LANGGRAPH_AVAILABLE = False
@@ -26,6 +30,14 @@ try:
     OLLAMA_AVAILABLE = True
 except ImportError:
     OLLAMA_AVAILABLE = False
+
+# Vector Store (optional)
+try:
+    import chromadb
+    from chromadb.config import Settings as ChromaSettings
+    VECTOR_STORE_AVAILABLE = True
+except ImportError:
+    VECTOR_STORE_AVAILABLE = False
 
 
 # ============================================================================
@@ -120,12 +132,98 @@ class AIState(BaseModel):
 
 
 # ============================================================================
+# RAG Vector Store Manager
+# ============================================================================
+
+class RAGVectorStore:
+    """Manages vector store for RAG-based AI generation"""
+
+    def __init__(self, path: str = "./vector_store"):
+        self.path = path
+        self.client = None
+        self.collection = None
+        self._init_store()
+
+    def _init_store(self):
+        """Initialize vector store"""
+        if not VECTOR_STORE_AVAILABLE:
+            return
+
+        try:
+            self.client = chromadb.Client(ChromaSettings(
+                persist_directory=self.path,
+                anonymized_telemetry=False
+            ))
+            self.collection = self.client.get_or_create_collection(
+                name="phantom_knowledge",
+                metadata={"description": "Phishing campaign knowledge base"}
+            )
+        except Exception as e:
+            print(f"Vector store init error: {e}")
+
+    def add_document(self, doc_id: str, content: str, metadata: Dict[str, Any] = None):
+        """Add document to vector store"""
+        if not self.collection:
+            return
+
+        try:
+            self.collection.upsert(
+                ids=[doc_id],
+                documents=[content],
+                metadatas=[metadata or {}]
+            )
+        except Exception as e:
+            print(f"Add document error: {e}")
+
+    def search(self, query: str, n_results: int = 5) -> List[Dict[str, Any]]:
+        """Search for relevant documents"""
+        if not self.collection:
+            return []
+
+        try:
+            results = self.collection.query(
+                query_texts=[query],
+                n_results=n_results
+            )
+
+            if results and results['documents']:
+                return [
+                    {
+                        "content": doc,
+                        "metadata": results['metadatas'][0][i] if results['metadatas'] else {},
+                        "distance": results['distances'][0][i] if results.get('distances') else 0
+                    }
+                    for i, doc in enumerate(results['documents'][0])
+                ]
+            return []
+        except Exception as e:
+            print(f"Search error: {e}")
+            return []
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get vector store statistics"""
+        if not self.collection:
+            return {"enabled": False}
+
+        try:
+            count = self.collection.count()
+            return {
+                "enabled": True,
+                "documents": count,
+                "collection": self.collection.name
+            }
+        except Exception as e:
+            return {"enabled": False, "error": str(e)}
+
+
+# ============================================================================
 # LLM Client
 # ============================================================================
 
 class LLMClient:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, vector_store: Optional[RAGVectorStore] = None):
         self.settings = settings
+        self.vector_store = vector_store
         self.client = None
         self._init_client()
 
@@ -137,14 +235,24 @@ class LLMClient:
             from openai import OpenAI
             self.client = OpenAI(api_key=self.settings.openai_api_key)
 
-    async def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        """Generate text using configured LLM"""
+    async def generate(self, prompt: str, system_prompt: Optional[str] = None, use_rag: bool = True) -> str:
+        """Generate text using configured LLM with optional RAG"""
         try:
+            # RAG enhancement
+            context = ""
+            if use_rag and self.vector_store and self.settings.rag_enabled:
+                rag_results = self.vector_store.search(prompt, n_results=3)
+                if rag_results:
+                    context = "\n\nRelevant context from knowledge base:\n"
+                    context += "\n".join([r['content'][:500] for r in rag_results])
+
+            full_prompt = prompt + context
+
             if self.settings.llm_provider == "ollama" and self.client:
                 response = await asyncio.to_thread(
                     self.client.generate,
                     model=self.settings.llm_model,
-                    prompt=prompt,
+                    prompt=full_prompt,
                     system=system_prompt or "You are a helpful AI assistant.",
                     stream=False
                 )
@@ -156,7 +264,7 @@ class LLMClient:
                     model=self.settings.openai_model,
                     messages=[
                         {"role": "system", "content": system_prompt or "You are a helpful AI assistant."},
-                        {"role": "user", "content": prompt}
+                        {"role": "user", "content": full_prompt}
                     ],
                     max_tokens=self.settings.max_tokens,
                     temperature=self.settings.temperature
@@ -223,9 +331,12 @@ def create_ai_workflow():
 async def lifespan(app: FastAPI):
     """Application lifespan handler"""
     # Startup
-    app.state.llm_client = LLMClient(settings)
+    vector_store = RAGVectorStore(settings.vector_store_path) if settings.rag_enabled else None
+    app.state.llm_client = LLMClient(settings, vector_store)
+    app.state.vector_store = vector_store
     app.state.workflow = create_ai_workflow()
     print(f"AI Service started with {settings.llm_provider}/{settings.llm_model}")
+    print(f"RAG enabled: {settings.rag_enabled and VECTOR_STORE_AVAILABLE}")
     yield
     # Shutdown
     print("AI Service stopped")
@@ -254,13 +365,19 @@ app.add_middleware(
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
+    vector_store_stats = app.state.vector_store.get_stats() if app.state.vector_store else {"enabled": False}
+
     return {
         "status": "healthy",
         "service": "phantomproxy-ai",
+        "version": "13.0.0",
         "llm_provider": settings.llm_provider,
         "llm_model": settings.llm_model,
         "langgraph": LANGGRAPH_AVAILABLE,
-        "ollama": OLLAMA_AVAILABLE
+        "ollama": OLLAMA_AVAILABLE,
+        "vector_store": VECTOR_STORE_AVAILABLE,
+        "rag_enabled": settings.rag_enabled,
+        "rag_stats": vector_store_stats
     }
 
 
@@ -488,13 +605,134 @@ Analysis:"""
 @app.get("/v1/stats")
 async def get_stats():
     """Get AI service statistics"""
+    vector_store_stats = app.state.vector_store.get_stats() if app.state.vector_store else {"enabled": False}
+
     return {
         "requests_processed": 0,  # Implement counter
         "avg_response_time": "0ms",
         "models_available": 4,
         "langgraph_enabled": LANGGRAPH_AVAILABLE,
-        "ollama_enabled": OLLAMA_AVAILABLE
+        "ollama_enabled": OLLAMA_AVAILABLE,
+        "vector_store_enabled": VECTOR_STORE_AVAILABLE,
+        "rag_stats": vector_store_stats
     }
+
+
+# ============================================================================
+# RAG Knowledge Base Endpoints
+# ============================================================================
+
+class AddKnowledgeRequest(BaseModel):
+    doc_id: str
+    content: str
+    metadata: Dict[str, Any] = {}
+    doc_type: str = "campaign"  # campaign, phishlet, template, report
+
+
+class SearchKnowledgeRequest(BaseModel):
+    query: str
+    n_results: int = 5
+    doc_type: Optional[str] = None
+
+
+@app.post("/v1/rag/add")
+async def add_to_knowledge(request: AddKnowledgeRequest):
+    """Add document to RAG knowledge base"""
+    if not app.state.vector_store:
+        raise HTTPException(status_code=400, detail="RAG not enabled")
+
+    try:
+        app.state.vector_store.add_document(
+            doc_id=request.doc_id,
+            content=request.content,
+            metadata={**request.metadata, "type": request.doc_type, "added_at": datetime.now().isoformat()}
+        )
+        return {"success": True, "doc_id": request.doc_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/rag/search")
+async def search_knowledge(request: SearchKnowledgeRequest):
+    """Search knowledge base"""
+    if not app.state.vector_store:
+        raise HTTPException(status_code=400, detail="RAG not enabled")
+
+    try:
+        results = app.state.vector_store.search(request.query, request.n_results)
+
+        # Filter by type if specified
+        if request.doc_type:
+            results = [r for r in results if r.get('metadata', {}).get('type') == request.doc_type]
+
+        return {
+            "success": True,
+            "query": request.query,
+            "results": results,
+            "count": len(results)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/v1/rag/stats")
+async def rag_stats():
+    """Get RAG knowledge base statistics"""
+    if not app.state.vector_store:
+        return {"enabled": False, "message": "RAG not enabled"}
+
+    return {
+        "success": True,
+        "stats": app.state.vector_store.get_stats()
+    }
+
+
+# ============================================================================
+# Phishlet Generator (AI-powered)
+# ============================================================================
+
+class GeneratePhishletRequest(BaseModel):
+    target_url: str
+    target_name: str
+    login_fields: List[str] = ["username", "password"]
+    additional_fields: List[str] = []
+
+
+@app.post("/v1/generate/phishlet")
+async def generate_phishlet(request: GeneratePhishletRequest):
+    """Generate phishlet configuration using AI"""
+    llm = app.state.llm_client
+
+    system_prompt = """You are an expert at creating Evilginx phishlet configurations.
+Generate valid YAML phishlet configurations for phishing simulations."""
+
+    prompt = f"""Generate an Evilginx phishlet configuration for {request.target_name}.
+
+Target URL: {request.target_url}
+Login Fields: {', '.join(request.login_fields)}
+Additional Fields: {', '.join(request.additional_fields)}
+
+Create a complete phishlet YAML configuration including:
+1. proxy_hosts configuration
+2. sub_filters for domain replacement
+3. auth_tokens for session capture
+4. credentials configuration for field capture
+5. auth_urls for login detection
+6. js_inject for any required JavaScript
+
+Output ONLY the YAML configuration:"""
+
+    try:
+        phishlet_yaml = await llm.generate(prompt, system_prompt, use_rag=True)
+
+        return {
+            "success": True,
+            "target": request.target_name,
+            "phishlet": phishlet_yaml,
+            "note": "Review and test phishlet before deployment"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # ============================================================================

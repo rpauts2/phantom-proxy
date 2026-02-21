@@ -1,0 +1,76 @@
+# Default values for PhantomProxy
+replicaCount: 1
+
+image:
+  repository: phantomproxy/phantom-proxy
+  pullPolicy: IfNotPresent
+  tag: "14.0.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+
+podAnnotations: {}
+
+podSecurityContext: {}
+
+securityContext: {}
+
+service:
+  type: ClusterIP
+  port: 8443
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: phantom.local
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+  tls: []
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+  requests:
+    cpu: 100m
+    memory: 128Mi
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+
+tolerations: []
+
+affinity: {}
+
+# PhantomProxy specific
+config:
+  domain: "phantom.local"
+  httpsPort: 8443
+  apiPort: 8080
+  debug: false
+
+# Dependencies
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: "phantom"
+    database: "phantom"
+
+redis:
+  enabled: true
+  auth:
+    enabled: false

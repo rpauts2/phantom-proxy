@@ -1,66 +1,94 @@
-# 🔒 SECURITY POLICY
+# Security Policy
+
+## Supported Versions
+
+| Version | Supported          |
+| ------- | ------------------ |
+| 14.0.x  | :white_check_mark: |
+| 13.0.x  | :warning: Legacy   |
+| < 13.0  | :x: Unsupported    |
 
 ## Reporting a Vulnerability
 
-We take the security of PhantomProxy Pro seriously. If you discover a security vulnerability, please report it responsibly.
+**DO NOT** create public issues for security vulnerabilities.
 
-### How to Report
+### Report Privately:
 
-**Email:** security@phantomseclabs.com
+1. **Email:** security@phantomseclabs.com
+2. **GitHub:** Use private vulnerability reporting
+3. **Include:**
+   - Description
+   - Steps to reproduce
+   - Impact assessment
+   - Suggested fix (if any)
 
-**Please include:**
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact
-- Suggested fix (if any)
-- Your contact information
+### Response Time:
 
-### Response Time
+- **Critical:** 24 hours
+- **High:** 48 hours
+- **Medium:** 1 week
+- **Low:** 2 weeks
 
-- **Initial Response:** Within 48 hours
-- **Status Update:** Within 5 business days
-- **Resolution Timeline:** Depends on severity
+## Security Best Practices
 
-### Security Process
+### For Users:
 
-1. **Report Received** — We acknowledge your report within 48 hours
-2. **Assessment** — We evaluate the vulnerability
-3. **Fix Development** — We develop and test a fix
-4. **Release** — We release a patched version
-5. **Disclosure** — Coordinated disclosure after 30 days
+1. **Authorization:**
+   - Only test systems you own
+   - Get written permission
+   - Follow Rules of Engagement
 
-### Supported Versions
+2. **Configuration:**
+   - Change default passwords
+   - Use HTTPS/TLS
+   - Enable authentication
+   - Restrict network access
 
-| Version | Supported |
-| ------- | --------- |
-| 12.5.x  | ✅ Yes    |
-| 12.4.x  | ✅ Yes    |
-| < 12.4  | ❌ No     |
+3. **Monitoring:**
+   - Enable audit logging
+   - Monitor for abuse
+   - Regular security updates
 
-### Security Best Practices
+### For Developers:
 
-When using PhantomProxy Pro:
+1. **Code:**
+   - Input validation
+   - Output encoding
+   - Secure defaults
+   - Error handling
 
-1. **Keep Updated** — Always use the latest version
-2. **Secure Configuration** — Follow our security configuration guide
-3. **Access Control** — Limit access to authorized personnel only
-4. **Encryption** — Enable encryption for sensitive data
-5. **Monitoring** — Monitor for unauthorized access
-6. **Backups** — Maintain regular backups
+2. **Dependencies:**
+   - Regular updates
+   - Vulnerability scanning
+   - Pin versions
 
-### Responsible Disclosure
+3. **Testing:**
+   - Security tests
+   - Penetration testing
+   - Code review
 
-We follow a coordinated disclosure process:
+## Security Features
 
-- **Day 0:** Vulnerability reported
-- **Day 1-5:** Assessment and validation
-- **Day 6-30:** Fix development and testing
-- **Day 31+:** Public disclosure (with your permission)
+- ✅ TLS 1.3 encryption
+- ✅ mTLS support
+- ✅ GOST encryption (FSTEC)
+- ✅ Session isolation
+- ✅ Audit logging
+- ✅ Rate limiting
+- ✅ Input validation
 
-### Recognition
+## Known Limitations
 
-We appreciate responsible disclosure and will acknowledge security researchers who report valid vulnerabilities (unless you prefer to remain anonymous).
+- Not for production use without additional hardening
+- Requires proper network segmentation
+- Needs external authentication for multi-user
+
+## Compliance
+
+- FSTEC УЗ-1/УЗ-2 ready
+- GDPR considerations
+- Ethical use only
 
 ---
 
-**Thank you for helping keep PhantomProxy Pro secure!**
+**Last Updated:** February 20, 2026

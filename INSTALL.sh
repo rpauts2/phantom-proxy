@@ -1,186 +1,341 @@
 #!/bin/bash
-# PhantomProxy v1.7.0 - ULTIMATE AUTO INSTALL
-# Просто выполни: bash install.sh
+# PhantomProxy v14.0 - Auto Installer for Linux
+# One-command installation script
 
-echo "============================================================"
-echo "PHANTOMPROXY v1.7.0 - ULTIMATE AUTO INSTALL"
-echo "============================================================"
-echo ""
+set -e
 
-# Очистка
-echo "[1/5] Очистка..."
-pkill -9 -f phantom-proxy 2>/dev/null || true
-pkill -9 -f 'python.*orchestrator' 2>/dev/null || true
-rm -rf ~/phantom-proxy
-mkdir ~/phantom-proxy
-cd ~/phantom-proxy
-echo "✅ Очищено"
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
 
-# Простая установка Python HTTP серверов
-echo ""
-echo "[2/5] Установка Python сервисов..."
+# Configuration
+INSTALL_DIR="${INSTALL_DIR:-/opt/phantomproxy}"
+PYTHON_VERSION="${PYTHON_VERSION:-3.11}"
+GO_VERSION="${GO_VERSION:-1.21}"
+DOCKER_COMPOSE_VERSION="${DOCKER_COMPOSE_VERSION:-v2.24.0}"
 
-# API Server (простой HTTP)
-cat > api.py << 'PYEOF'
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import json
+# Functions
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if '/health' in self.path:
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"status":"ok","service":"api"}')
-        elif '/api/v1/stats' in self.path:
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"total_sessions":0,"active_phishlets":2,"phishlets_loaded":2}')
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        pass
+log_success() {
+    echo -e "${GREEN}[✓]${NC} $1"
+}
 
-HTTPServer(('0.0.0.0', 8080), Handler).serve_forever()
-PYEOF
+log_warning() {
+    echo -e "${YELLOW}[!]${NC} $1"
+}
 
-# HTTPS Proxy (простой редирект)
-cat > https.py << 'PYEOF'
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import ssl
+log_error() {
+    echo -e "${RED}[✗]${NC} $1"
+}
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(302)
-        self.send_header('Location', 'https://login.microsoftonline.com')
-        self.end_headers()
-    
-    def do_POST(self):
-        self.send_response(302)
-        self.send_header('Location', 'https://login.microsoftonline.com')
-        self.end_headers()
-    
-    def log_message(self, format, *args):
-        pass
+print_banner() {
+    echo -e "${CYAN}"
+    cat << "EOF"
+██████╗  ██████╗ ██╗     ██╗     ██╗███╗   ██╗ ██████╗
+██╔══██╗██╔═══██╗██║     ██║     ██║████╗  ██║██╔════╝
+██████╔╝██║   ██║██║     ██║     ██║██╔██╗ ██║██║  ███╗
+██╔═══╝ ██║   ██║██║     ██║     ██║██║╚██╗██║██║   ██║
+██║     ╚██████╔╝███████╗███████╗██║██║ ╚████║╚██████╔╝
+╚═╝      ╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝
 
-server = HTTPServer(('0.0.0.0', 8443), Handler)
-context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-context.load_cert_chain('cert.pem', 'key.pem')
-server.socket = context.wrap_socket(server.socket, server_side=True)
-server.serve_forever()
-PYEOF
+        Enterprise Red Team Platform v14.0.0
+        © 2026 PhantomSec Labs
+EOF
+    echo -e "${NC}\n"
+}
 
-echo "✅ Python сервисы созданы"
+check_root() {
+    if [ "$EUID" -ne 0 ]; then
+        log_error "Please run as root (sudo ./install.sh)"
+        exit 1
+    fi
+}
 
-# Генерация SSL
-echo ""
-echo "[3/5] Генерация SSL..."
-openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
-  -days 365 -nodes -subj '/CN=verdebudget.ru' 2>/dev/null
-echo "✅ SSL готов"
+check_os() {
+    if [ -f /etc/os-release ]; then
+        . /etc/os-release
+        OS=$NAME
+        log_info "Detected OS: $OS"
+    else
+        log_error "Cannot detect OS"
+        exit 1
+    fi
+}
 
-# Запуск
-echo ""
-echo "[4/5] Запуск сервисов..."
+install_dependencies() {
+    log_info "Installing system dependencies..."
 
-# API
-nohup python3 api.py > api.log 2>&1 &
-API_PID=$!
-echo "  🚀 API Server (PID: $API_PID)"
+    case $OS in
+        *"Ubuntu"*|*"Debian"*)
+            apt-get update
+            apt-get install -y \
+                curl wget git vim nano \
+                build-essential libssl-dev \
+                software-properties-common \
+                apt-transport-https ca-certificates gnupg
+            ;;
+        *"CentOS"*|*"Fedora"*|*"RHEL"*)
+            yum install -y \
+                curl wget git vim nano \
+                gcc gcc-c++ make openssl-devel \
+                epel-release
+            ;;
+        *)
+            log_warning "Unknown OS, trying basic installation..."
+            ;;
+    esac
 
-# HTTPS
-nohup python3 https.py > https.log 2>&1 &
-HTTPS_PID=$!
-echo "  🚀 HTTPS Proxy (PID: $HTTPS_PID)"
+    log_success "System dependencies installed"
+}
 
-sleep 3
-echo "✅ Сервисы запущены"
+install_docker() {
+    if command -v docker &> /dev/null; then
+        log_info "Docker already installed"
+        return
+    fi
 
-# Тесты
-echo ""
-echo "[5/5] Тестирование..."
-echo ""
+    log_info "Installing Docker..."
+    curl -fsSL https://get.docker.com -o get-docker.sh
+    sh get-docker.sh
+    rm get-docker.sh
 
-PASSED=0
-FAILED=0
+    systemctl enable docker
+    systemctl start docker
 
-# API Test
-if curl -s --connect-timeout 2 http://localhost:8080/health | grep -q '"status":"ok"'; then
-    echo "✅ API Server (8080)"
-    PASSED=$((PASSED+1))
-else
-    echo "❌ API Server (8080)"
-    FAILED=$((FAILED+1))
-fi
+    log_success "Docker installed"
+}
 
-# Stats Test
-if curl -s --connect-timeout 2 http://localhost:8080/api/v1/stats | grep -q '"total_sessions"'; then
-    echo "✅ API Stats"
-    PASSED=$((PASSED+1))
-else
-    echo "❌ API Stats"
-    FAILED=$((FAILED+1))
-fi
+install_docker_compose() {
+    if command -v docker-compose &> /dev/null; then
+        log_info "Docker Compose already installed"
+        return
+    fi
 
-# HTTPS Test
-if curl -sk --connect-timeout 2 https://localhost:8443/ 2>&1 | grep -q "302\|Found"; then
-    echo "✅ HTTPS Proxy (8443)"
-    PASSED=$((PASSED+1))
-else
-    echo "❌ HTTPS Proxy (8443)"
-    FAILED=$((FAILED+1))
-fi
+    log_info "Installing Docker Compose..."
+    curl -L "https://github.com/docker/compose/releases/download/${DOCKER_COMPOSE_VERSION}/docker-compose-$(uname -s)-$(uname -m)" \
+        -o /usr/local/bin/docker-compose
+    chmod +x /usr/local/bin/docker-compose
 
-echo ""
-echo "============================================================"
-echo "РЕЗУЛЬТАТЫ"
-echo "============================================================"
-echo "Пройдено: $PASSED из 3"
+    log_success "Docker Compose installed"
+}
 
-if [ $PASSED -eq 3 ]; then
-    echo ""
-    echo "🎉 УСТАНОВКА ЗАВЕРШЕНА УСПЕШНО!"
-    echo ""
-    echo "PhantomProxy v1.7.0 работает:"
-    echo "  API:       http://212.233.93.147:8080"
-    echo "  HTTPS:     https://212.233.93.147:8443"
-    echo ""
-    echo "Тесты:"
-    echo "  curl http://212.233.93.147:8080/health"
-    echo "  curl http://212.233.93.147:8080/api/v1/stats"
-    echo "  curl -k https://212.233.93.147:8443/"
-    echo ""
-    echo "PIDs: $API_PID (API), $HTTPS_PID (HTTPS)"
-else
-    echo ""
-    echo "⚠️ ПРОБЛЕМЫ ПРИ УСТАНОВКЕ"
-    echo "Проверь логи: ls -la *.log"
-fi
+install_go() {
+    if command -v go &> /dev/null; then
+        log_info "Go already installed ($(go version))"
+        return
+    fi
 
-echo "============================================================"
+    log_info "Installing Go ${GO_VERSION}..."
+    cd /tmp
+    wget -q "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz"
+    tar -C /usr/local -xzf "go${GO_VERSION}.linux-amd64.tar.gz"
+    rm "go${GO_VERSION}.linux-amd64.tar.gz"
 
-# Сохранение информации
-cat > INSTALL_INFO.txt << EOF
-PHANTOMPROXY v1.7.0 INSTALLED
-=============================
-Date: $(date)
-Status: $([ $PASSED -eq 3 ] && echo "SUCCESS" || echo "FAILED")
-Tests: $PASSED/3
+    echo 'export PATH=$PATH:/usr/local/go/bin' >> /etc/profile
+    echo 'export PATH=$PATH:$HOME/go/bin' >> /etc/profile
+    source /etc/profile
 
-Endpoints:
-- API:  http://212.233.93.147:8080
-- HTTPS: https://212.233.93.147:8443
+    log_success "Go installed"
+}
 
-Processes:
-API PID: $API_PID
-HTTPS PID: $HTTPS_PID
+install_python() {
+    if command -v python3 &> /dev/null; then
+        log_info "Python already installed ($(python3 --version))"
+        return
+    fi
 
-Files:
-$(ls -lh *.py *.pem *.log 2>/dev/null)
+    log_info "Installing Python ${PYTHON_VERSION}..."
+
+    case $OS in
+        *"Ubuntu"*|*"Debian"*)
+            add-apt-repository ppa:deadsnakes/ppa
+            apt-get update
+            apt-get install -y python${PYTHON_VERSION} python${PYTHON_VERSION}-venv python${PYTHON_VERSION}-dev
+            ;;
+        *)
+            log_warning "Please install Python ${PYTHON_VERSION} manually"
+            ;;
+    esac
+
+    log_success "Python installed"
+}
+
+create_directories() {
+    log_info "Creating directory structure..."
+
+    mkdir -p "$INSTALL_DIR"/{core,internal,cmd,ai_service,api,frontend,configs/phishlets,deploy,certs,logs}
+
+    log_success "Directories created"
+}
+
+setup_python_env() {
+    log_info "Setting up Python environment..."
+
+    cd "$INSTALL_DIR"
+    python3 -m venv venv
+    source venv/bin/activate
+
+    # Install Python dependencies
+    if [ -f "requirements.txt" ]; then
+        pip install -r requirements.txt
+    fi
+
+    log_success "Python environment setup"
+}
+
+setup_go_env() {
+    log_info "Setting up Go environment..."
+
+    cd "$INSTALL_DIR"
+    go mod download
+
+    log_success "Go environment setup"
+}
+
+generate_certs() {
+    log_info "Generating SSL certificates..."
+
+    cd "$INSTALL_DIR/certs"
+    openssl req -x509 -newkey rsa:4096 \
+        -keyout key.pem -out cert.pem \
+        -days 365 -nodes \
+        -subj "/C=US/ST=State/L=City/O=Organization/CN=phantom.local"
+
+    chmod 600 key.pem
+    chmod 644 cert.pem
+
+    log_success "SSL certificates generated"
+}
+
+create_config() {
+    log_info "Creating configuration file..."
+
+    cat > "$INSTALL_DIR/config.yaml" << 'EOF'
+# PhantomProxy v14.0 Configuration
+bind_ip: "0.0.0.0"
+https_port: 8443
+domain: "phantom.local"
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+database_path: "./phantom.db"
+api_enabled: true
+api_port: 8080
+api_key: "change-me-to-secure-random-string"
+debug: false
 EOF
 
-echo ""
-echo "Информация: INSTALL_INFO.txt"
+    log_success "Configuration created"
+}
+
+create_systemd_service() {
+    log_info "Creating systemd service..."
+
+    cat > /etc/systemd/system/phantomproxy.service << EOF
+[Unit]
+Description=PhantomProxy v14.0 - Enterprise Red Team Platform
+After=network.target docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=$INSTALL_DIR
+ExecStart=$INSTALL_DIR/phantom-proxy --config $INSTALL_DIR/config.yaml
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    systemctl daemon-reload
+    systemctl enable phantomproxy
+
+    log_success "Systemd service created"
+}
+
+build_binary() {
+    log_info "Building PhantomProxy binary..."
+
+    cd "$INSTALL_DIR"
+    go build -ldflags="-s -w" -o phantom-proxy ./cmd/phantom-proxy-v14
+
+    log_success "Binary built"
+}
+
+set_permissions() {
+    log_info "Setting permissions..."
+
+    chmod +x "$INSTALL_DIR/phantom-proxy"
+    chmod 755 "$INSTALL_DIR"
+    chmod -R 755 "$INSTALL_DIR/core"
+    chmod -R 755 "$INSTALL_DIR/internal"
+
+    log_success "Permissions set"
+}
+
+print_summary() {
+    echo ""
+    echo -e "${GREEN}╔══════════════════════════════════════════════════════════╗${NC}"
+    echo -e "${GREEN}║${NC}          ${CYAN}INSTALLATION COMPLETED SUCCESSFULLY${NC}                  ${GREEN}║${NC}"
+    echo -e "${GREEN}╚══════════════════════════════════════════════════════════╝${NC}"
+    echo ""
+    echo -e "${BLUE}Installation Directory:${NC} $INSTALL_DIR"
+    echo -e "${BLUE}Version:${NC} 14.0.0"
+    echo ""
+    echo -e "${YELLOW}Quick Start:${NC}"
+    echo "  Start:     sudo systemctl start phantomproxy"
+    echo "  Status:    sudo systemctl status phantomproxy"
+    echo "  Logs:      sudo journalctl -u phantomproxy -f"
+    echo "  Stop:      sudo systemctl stop phantomproxy"
+    echo ""
+    echo -e "${YELLOW}Docker Compose:${NC}"
+    echo "  Start:     cd $INSTALL_DIR && docker-compose up -d"
+    echo "  Stop:      cd $INSTALL_DIR && docker-compose down"
+    echo ""
+    echo -e "${YELLOW}Web Interface:${NC}"
+    echo "  Frontend:  http://localhost:3000"
+    echo "  API:       http://localhost:8080"
+    echo "  Proxy:     https://localhost:8443"
+    echo ""
+    echo -e "${CYAN}Documentation: $INSTALL_DIR/docs/README.md${NC}"
+    echo ""
+}
+
+# Main
+main() {
+    print_banner
+
+    log_info "Starting installation..."
+    echo ""
+
+    check_root
+    check_os
+    install_dependencies
+    install_docker
+    install_docker_compose
+    install_go
+    install_python
+    create_directories
+    setup_python_env
+    setup_go_env
+    generate_certs
+    create_config
+    build_binary
+    create_systemd_service
+    set_permissions
+
+    print_summary
+
+    log_success "Installation complete!"
+}
+
+# Run
+main "$@"
