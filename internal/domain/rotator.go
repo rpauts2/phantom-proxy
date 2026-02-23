@@ -40,18 +40,11 @@ type CertificateInfo struct {
 
 // RotatorConfig конфигурация ротатора
 type RotatorConfig struct {
-	AutoRenew       bool          `json:"auto_renew"`
-	AutoRenewBefore int           `json:"auto_renew_before"` // часов
+	AutoRenew        bool          `json:"auto_renew"`
+	AutoRenewBefore  int           `json:"auto_renew_before"` // часов
 	RotationInterval time.Duration `json:"rotation_interval"`
-	DNSProvider     string        `json:"dns_provider"`
-	Email           string        `json:"email"`
-}
-
-// DNSProvider интерфейс для DNS провайдеров
-type DNSProvider interface {
-	AddRecord(ctx context.Context, domain, recordType, value string) error
-	DeleteRecord(ctx context.Context, domain, recordType string) error
-	Validate(ctx context.Context, domain string) bool
+	DNSProvider      string        `json:"dns_provider"`
+	Email            string        `json:"email"`
 }
 
 // DefaultConfig возвращает конфигурацию по умолчанию

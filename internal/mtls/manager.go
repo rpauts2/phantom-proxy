@@ -1,277 +1,495 @@
-// Package mtls - Zero-Trust mTLS Implementation
+// Package mtls - Zero-Trust mTLS Manager
+// Implements SPIFFE-style mutual TLS between services
 package mtls
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
-	"io/ioutil"
+	"math/big"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	"go.uber.org/zap"
 )
 
-// Config mTLS конфигурация
+// ============================================================================
+// Configuration
+// ============================================================================
+
 type Config struct {
-	Enabled        bool   `json:"enabled"`
-	CertPath       string `json:"cert_path"`
-	KeyPath        string `json:"key_path"`
-	CACertPath     string `json:"ca_cert_path"`
-	MinTLSVersion  uint16 `json:"min_tls_version"`
-	VerifyClient   bool   `json:"verify_client"`
-	ClientTimeout  time.Duration `json:"client_timeout"`
+	// Server configuration
+	CertPath       string `yaml:"cert_path" env:"MTLS_CERT_PATH"`
+	KeyPath        string `yaml:"key_path" env:"MTLS_KEY_PATH"`
+	CAcertPath     string `yaml:"ca_cert_path" env:"MTLS_CA_CERT_PATH"`
+	CAkeyPath      string `yaml:"ca_key_path" env:"MTLS_CA_KEY_PATH"`
+	
+	// Auto-generation
+	AutoGenerate   bool   `yaml:"auto_generate" env:"MTLS_AUTO_GENERATE"`
+	CertValidity   time.Duration `yaml:"cert_validity" env:"MTLS_CERT_VALIDITY"`
+	
+	// Verification
+	VerifyClient  bool   `yaml:"verify_client" env:"MTLS_VERIFY_CLIENT"`
+	MinTLSVersion uint16 `yaml:"min_tls_version" env:"MTLS_MIN_TLS_VERSION"`
+	
+	// SPIFFE
+	SpiffeEnabled bool   `yaml:"spiffe_enabled" env:"MTLS_SPIFFE_ENABLED"`
+	TrustDomain   string `yaml:"trust_domain" env:"MTLS_TRUST_DOMAIN"`
+	ServiceName   string `yaml:"service_name" env:"MTLS_SERVICE_NAME"`
 }
 
-// MTLSManager управляет mTLS соединениями
-type MTLSManager struct {
-	mu       sync.RWMutex
-	config   *Config
-	logger   *zap.Logger
-	caCert   *x509.Certificate
-	caPool   *x509.CertPool
-	certPool *x509.CertPool
-}
-
-// ClientCert представляет клиентский сертификат
-type ClientCert struct {
-	ID        string    `json:"id"`
-	CommonName string   `json:"common_name"`
-	Org       string    `json:"org"`
-	OrgUnit   string    `json:"org_unit"`
-	IssuedAt  time.Time `json:"issued_at"`
-	ExpiresAt time.Time `json:"expires_at"`
-	Revoked   bool      `json:"revoked"`
-}
-
-// DefaultConfig возвращает конфигурацию по умолчанию
 func DefaultConfig() *Config {
 	return &Config{
-		Enabled:       true,
-		MinTLSVersion: tls.VersionTLS13,
+		AutoGenerate:   true,
+		CertValidity:   24 * time.Hour,
 		VerifyClient:  true,
-		ClientTimeout: 30 * time.Second,
+		MinTLSVersion:  tls.VersionTLS12,
+		SpiffeEnabled:  true,
+		TrustDomain:   "phantom.local",
 	}
 }
 
-// NewMTLSManager создает mTLS менеджер
-func NewMTLSManager(config *Config, logger *zap.Logger) (*MTLSManager, error) {
-	if config == nil {
-		config = DefaultConfig()
-	}
+// ============================================================================
+// Certificate Authority
+// ============================================================================
 
-	m := &MTLSManager{
+type CA struct {
+	mu         sync.RWMutex
+	cert       *x509.Certificate
+	privateKey *rsa.PrivateKey
+	certPEM    []byte
+	keyPEM     []byte
+	config     *Config
+	logger     *zap.Logger
+}
+
+func NewCA(config *Config, logger *zap.Logger) (*CA, error) {
+	ca := &CA{
 		config: config,
 		logger: logger,
 	}
 
-	// Загрузить CA сертификат
-	if err := m.loadCACert(); err != nil {
-		return nil, fmt.Errorf("failed to load CA cert: %w", err)
+	if config.AutoGenerate {
+		if err := ca.generateCA(); err != nil {
+			return nil, fmt.Errorf("failed to generate CA: %w", err)
+		}
+	} else {
+		if err := ca.loadCA(); err != nil {
+			return nil, fmt.Errorf("failed to load CA: %w", err)
+		}
 	}
 
-	logger.Info("mTLS manager initialized",
-		zap.Bool("enabled", config.Enabled),
-		zap.Uint16("min_tls_version", config.MinTLSVersion),
-		zap.Bool("verify_client", config.VerifyClient))
-
-	return m, nil
+	return ca, nil
 }
 
-// loadCACert загружает CA сертификат
-func (m *MTLSManager) loadCACert() error {
-	if m.config.CACertPath == "" {
-		m.logger.Warn("CA cert path not set, skipping CA load")
-		return nil
-	}
-
-	caCertPEM, err := ioutil.ReadFile(m.config.CACertPath)
+func (ca *CA) generateCA() error {
+	privateKey, err := rsa.GenerateKey(rand.Reader, 4096)
 	if err != nil {
 		return err
 	}
 
-	block, _ := pem.Decode(caCertPEM)
-	if block == nil {
-		return fmt.Errorf("failed to parse CA certificate")
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			Organization: []string{"PhantomProxy CA"},
+			CommonName:   "PhantomProxy Root CA",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(10 * 365 * 24 * time.Hour),
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign,
+		BasicConstraintsValid: true,
+		IsCA:                  true,
+		MaxPathLen:            2,
 	}
 
-	caCert, err := x509.ParseCertificate(block.Bytes)
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &privateKey.PublicKey, privateKey)
 	if err != nil {
 		return err
 	}
 
-	m.caCert = caCert
-	m.caPool = x509.NewCertPool()
-	m.caPool.AddCert(caCert)
-
-	m.logger.Info("CA certificate loaded",
-		zap.String("subject", caCert.Subject.CommonName),
-		zap.Time("expires", caCert.NotAfter))
-
-	return nil
-}
-
-// CreateTLSConfig создает TLS конфигурацию для сервера
-func (m *MTLSManager) CreateTLSConfig() (*tls.Config, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	cert, err := tls.LoadX509KeyPair(m.config.CertPath, m.config.KeyPath)
+	cert, err := x509.ParseCertificate(certDER)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load server cert: %w", err)
+		return err
 	}
 
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   m.config.MinTLSVersion,
-		ClientAuth:   tls.NoClientCert,
+	ca.cert = cert
+	ca.privateKey = privateKey
+	ca.certPEM = encodeCertPEM(certDER)
+	ca.keyPEM = encodeKeyPEM(privateKey)
+
+	ca.logger.Info("CA generated", zap.String("subject", cert.Subject.CommonName))
+
+	// Save to files
+	if ca.config.CAcertPath != "" {
+		os.WriteFile(ca.config.CAcertPath, ca.certPEM, 0644)
 	}
-
-	if m.config.VerifyClient {
-		tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
-		tlsConfig.ClientCAs = m.caPool
-	}
-
-	tlsConfig.BuildNameToCertificate()
-
-	m.logger.Info("TLS config created",
-		zap.Uint16("min_version", tlsConfig.MinVersion),
-		zap.Bool("client_auth_required", m.config.VerifyClient))
-
-	return tlsConfig, nil
-}
-
-// CreateClientTLSConfig создает TLS конфигурацию для клиента
-func (m *MTLSManager) CreateClientTLSConfig(clientCertPath, clientKeyPath string) (*tls.Config, error) {
-	cert, err := tls.LoadX509KeyPair(clientCertPath, clientKeyPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load client cert: %w", err)
-	}
-
-	return &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		RootCAs:      m.caPool,
-		MinVersion:   m.config.MinTLSVersion,
-		ServerName:   m.caCert.Subject.CommonName,
-	}, nil
-}
-
-// ValidateClientCert валидирует клиентский сертификат
-func (m *MTLSManager) ValidateClientCert(cert *x509.Certificate) error {
-	if cert == nil {
-		return fmt.Errorf("certificate is nil")
-	}
-
-	if cert.NotAfter.Before(time.Now()) {
-		return fmt.Errorf("certificate expired")
-	}
-
-	if cert.NotBefore.After(time.Now()) {
-		return fmt.Errorf("certificate not yet valid")
-	}
-
-	opts := x509.VerifyOptions{
-		Roots:     m.caPool,
-		KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-	}
-
-	if _, err := cert.Verify(opts); err != nil {
-		return fmt.Errorf("certificate verification failed: %w", err)
+	if ca.config.CAkeyPath != "" {
+		os.WriteFile(ca.config.CAkeyPath, ca.keyPEM, 0600)
 	}
 
 	return nil
 }
 
-// GetClientCertInfo извлекает информацию из клиентского сертификата
-func (m *MTLSManager) GetClientCertInfo(cert *x509.Certificate) *ClientCert {
-	return &ClientCert{
-		ID:         cert.Subject.CommonName,
-		CommonName: cert.Subject.CommonName,
-		Org:        cert.Subject.Organization[0],
-		OrgUnit:    cert.Subject.OrganizationalUnit[0],
-		IssuedAt:   cert.NotBefore,
-		ExpiresAt:  cert.NotAfter,
-		Revoked:    false,
+func (ca *CA) loadCA() error {
+	certPEM, err := os.ReadFile(ca.config.CAcertPath)
+	if err != nil {
+		return err
 	}
+
+	keyPEM, err := os.ReadFile(ca.config.CAkeyPath)
+	if err != nil {
+		return err
+	}
+
+	cert, err := parseCertPEM(certPEM)
+	if err != nil {
+		return err
+	}
+
+	key, err := parseKeyPEM(keyPEM)
+	if err != nil {
+		return err
+	}
+
+	ca.cert = cert
+	ca.privateKey = key
+	ca.certPEM = certPEM
+	ca.keyPEM = keyPEM
+
+	return nil
 }
 
-// CreateDialContext создает функцию dial с mTLS
-func (m *MTLSManager) CreateDialContext(clientCertPath, clientKeyPath string) (func(context.Context, string, string) (interface{}, error), error) {
-	tlsConfig, err := m.CreateClientTLSConfig(clientCertPath, clientKeyPath)
+// ============================================================================
+// Certificate Generation
+// ============================================================================
+
+func (ca *CA) GenerateServiceCert(serviceName string, sans []string) ([]byte, []byte, error) {
+	ca.mu.Lock()
+	defer ca.mu.Unlock()
+
+	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	serialNumber := big.NewInt(time.Now().UnixNano())
+
+	template := x509.Certificate{
+		SerialNumber: serialNumber,
+		Subject: pkix.Name{
+			Organization: []string{"PhantomProxy"},
+			CommonName:   serviceName,
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(ca.config.CertValidity),
+		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth, x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+		DNSNames:                 sans,
+	}
+
+	// Add SPIFFE SAN if enabled
+	if ca.config.SpiffeEnabled {
+		spiffeID := fmt.Sprintf("spiffe://%s/ns/default/sa/%s", ca.config.TrustDomain, serviceName)
+		template.DNSNames = append(template.DNSNames, spiffeID)
+	}
+
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, ca.cert, &privateKey.PublicKey, ca.privateKey)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	certPEM := encodeCertPEM(certDER)
+	keyPEM := encodeKeyPEM(privateKey)
+
+	ca.logger.Info("Service certificate generated",
+		zap.String("service", serviceName),
+		zap.Strings("sans", sans))
+
+	return certPEM, keyPEM, nil
+}
+
+// ============================================================================
+// TLS Config Generation
+// ============================================================================
+
+func (ca *CA) GetServerTLSConfig() (*tls.Config, error) {
+	certPEM, keyPEM, err := ca.GenerateServiceCert(ca.config.ServiceName, []string{
+		ca.config.ServiceName,
+		"localhost",
+		"127.0.0.1",
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return func(ctx context.Context, network, addr string) (interface{}, error) {
-		conn, err := tls.Dial(network, addr, tlsConfig)
-		if err != nil {
-			return nil, err
-		}
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
+	}
 
-		if err := conn.HandshakeContext(ctx); err != nil {
-			conn.Close()
-			return nil, err
-		}
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(ca.certPEM)
 
-		return conn, nil
+	return &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		ClientCAs:    pool,
+		ClientAuth:   tls.RequestClientCert,
+		MinVersion:   ca.config.MinTLSVersion,
+		CipherSuites: []uint16{
+			tls.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384,
+			tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+			tls.TLS_RSA_WITH_AES_256_GCM_SHA384,
+		},
 	}, nil
 }
 
-// GetStats возвращает статистику
-func (m *MTLSManager) GetStats() map[string]interface{} {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	stats := map[string]interface{}{
-		"enabled":          m.config.Enabled,
-		"verify_client":    m.config.VerifyClient,
-		"min_tls_version":  m.config.MinTLSVersion,
-		"client_timeout":   m.config.ClientTimeout.String(),
+func (ca *CA) GetClientTLSConfig() (*tls.Config, error) {
+	certPEM, keyPEM, err := ca.GenerateServiceCert(ca.config.ServiceName, nil)
+	if err != nil {
+		return nil, err
 	}
 
-	if m.caCert != nil {
-		stats["ca_subject"] = m.caCert.Subject.CommonName
-		stats["ca_expires"] = m.caCert.NotAfter
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		return nil, err
 	}
 
-	return stats
+	pool := x509.NewCertPool()
+	pool.AppendCertsFromPEM(ca.certPEM)
+
+	return &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		RootCAs:           pool,
+		MinVersion:        ca.config.MinTLSVersion,
+		InsecureSkipVerify: false,
+	}, nil
 }
 
-// GenerateClientCert генерирует клиентский сертификат (заглушка)
-func (m *MTLSManager) GenerateClientCert(commonName, org, orgUnit string, duration time.Duration) (*ClientCert, error) {
-	// В production: реальная генерация сертификатов
-	// Здесь упрощенная версия
+// ============================================================================
+// SPIFFE Workload API (Simplified)
+// ============================================================================
 
-	cert := &ClientCert{
-		ID:         commonName,
-		CommonName: commonName,
-		Org:        org,
-		OrgUnit:    orgUnit,
-		IssuedAt:   time.Now(),
-		ExpiresAt:  time.Now().Add(duration),
-		Revoked:    false,
-	}
-
-	m.logger.Info("Client certificate generated",
-		zap.String("common_name", commonName),
-		zap.Time("expires", cert.ExpiresAt))
-
-	return cert, nil
+type WorkloadAPI struct {
+	ca      *CA
+	logger  *zap.Logger
+	entries map[string]*SpiffeEntry
+	mu      sync.RWMutex
 }
 
-// RevokeClientCert отзывает сертификат (заглушка)
-func (m *MTLSManager) RevokeClientCert(certID string) error {
-	// В production: добавить в CRL
-	m.logger.Info("Client certificate revoked", zap.String("id", certID))
+type SpiffeEntry struct {
+	SpiffeID     string
+	ServiceName  string
+	TrustDomain  string
+	CertPEM      []byte
+	KeyPEM       []byte
+	CertChainPEM []byte
+	ExpiresAt    time.Time
+}
+
+func NewWorkloadAPI(ca *CA, logger *zap.Logger) *WorkloadAPI {
+	return &WorkloadAPI{
+		ca:      ca,
+		logger:  logger,
+		entries: make(map[string]*SpiffeEntry),
+	}
+}
+
+func (w *WorkloadAPI) FetchX509SVID(ctx context.Context, spiffeID string) (*SpiffeEntry, error) {
+	w.mu.RLock()
+	if entry, ok := w.entries[spiffeID]; ok {
+		w.mu.RUnlock()
+		if time.Now().Before(entry.ExpiresAt) {
+			return entry, nil
+		}
+	}
+	w.mu.RUnlock()
+
+	// Generate new SVID
+	serviceName := extractServiceName(spiffeID)
+	certPEM, keyPEM, err := w.ca.GenerateServiceCert(serviceName, []string{spiffeID})
+	if err != nil {
+		return nil, err
+	}
+
+	entry := &SpiffeEntry{
+		SpiffeID:     spiffeID,
+		ServiceName:  serviceName,
+		TrustDomain:  w.ca.config.TrustDomain,
+		CertPEM:      certPEM,
+		KeyPEM:       keyPEM,
+		CertChainPEM: w.ca.certPEM,
+		ExpiresAt:    time.Now().Add(w.ca.config.CertValidity),
+	}
+
+	w.mu.Lock()
+	w.entries[spiffeID] = entry
+	w.mu.Unlock()
+
+	w.logger.Info("X.509 SVID issued", zap.String("spiffe_id", spiffeID))
+
+	return entry, nil
+}
+
+func extractServiceName(spiffeID string) string {
+	// spiffe://trust-domain/ns/default/sa/service-name
+	parts := split(spiffeID, "/")
+	if len(parts) >= 5 {
+		return parts[4]
+	}
+	return "unknown"
+}
+
+func split(s, sep string) []string {
+	result := []string{}
+	current := ""
+	for _, c := range s {
+		if string(c) == sep {
+			if current != "" {
+				result = append(result, current)
+				current = ""
+			}
+		} else {
+			current += string(c)
+		}
+	}
+	if current != "" {
+		result = append(result, current)
+	}
+	return result
+}
+
+// ============================================================================
+// Manager
+// ============================================================================
+
+type Manager struct {
+	config   *Config
+	logger   *zap.Logger
+	ca       *CA
+	workload *WorkloadAPI
+}
+
+func NewManager(config *Config, logger *zap.Logger) (*Manager, error) {
+	ca, err := NewCA(config, logger)
+	if err != nil {
+		return nil, err
+	}
+
+	m := &Manager{
+		config:   config,
+		logger:   logger,
+		ca:       ca,
+		workload: NewWorkloadAPI(ca, logger),
+	}
+
+	logger.Info("mTLS Manager initialized",
+		zap.Bool("spiffe", config.SpiffeEnabled),
+		zap.String("trust_domain", config.TrustDomain))
+
+	return m, nil
+}
+
+func (m *Manager) GetServerTLSConfig() (*tls.Config, error) {
+	return m.ca.GetServerTLSConfig()
+}
+
+func (m *Manager) GetClientTLSConfig() (*tls.Config, error) {
+	return m.ca.GetClientTLSConfig()
+}
+
+func (m *Manager) GetWorkloadAPI() *WorkloadAPI {
+	return m.workload
+}
+
+func (m *Manager) VerifyPeerCert(connState tls.ConnectionState) error {
+	if len(connState.PeerCertificates) == 0 {
+		return fmt.Errorf("no peer certificates")
+	}
+
+	// Verify certificate chain
+	opts := x509.VerifyOptions{
+		Roots:         x509.NewCertPool(),
+		Intermediates: x509.NewCertPool(),
+	}
+
+	opts.Roots.AppendCertsFromPEM(m.ca.certPEM)
+
+	for i, cert := range connState.PeerCertificates {
+		if i == 0 {
+			continue
+		}
+		opts.Intermediates.AddCert(cert)
+	}
+
+	_, err := connState.PeerCertificates[0].Verify(opts)
+	return err
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+func encodeCertPEM(der []byte) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+func encodeKeyPEM(key *rsa.PrivateKey) []byte {
+	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+}
+
+func parseCertPEM(pemData []byte) (*x509.Certificate, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM data found")
+	}
+	return x509.ParseCertificate(block.Bytes)
+}
+
+func parseKeyPEM(pemData []byte) (*rsa.PrivateKey, error) {
+	block, _ := pem.Decode(pemData)
+	if block == nil {
+		return nil, fmt.Errorf("no PEM data found")
+	}
+	return x509.ParsePKCS1PrivateKey(block.Bytes)
+}
+
+// Ensure directory exists
+func ensureDir(path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return os.MkdirAll(path, 0755)
+	}
 	return nil
 }
 
-// IsZeroTrustReady проверяет готовность Zero-Trust
-func (m *MTLSManager) IsZeroTrustReady() bool {
-	return m.config.Enabled &&
-		   m.config.VerifyClient &&
-		   m.config.MinTLSVersion >= tls.VersionTLS13 &&
-		   m.caCert != nil
+// LoadOrGenerate loads existing certificates or generates new ones
+func LoadOrGenerate(config *Config, logger *zap.Logger, serviceName string) (*tls.Config, *tls.Config, error) {
+	mgr, err := NewManager(config, logger)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	serverConfig, err := mgr.GetServerTLSConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	clientConfig, err := mgr.GetClientTLSConfig()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Save certs
+	if config.CertPath != "" {
+		ensureDir(filepath.Dir(config.CertPath))
+	}
+
+	return serverConfig, clientConfig, nil
 }

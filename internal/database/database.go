@@ -540,7 +540,7 @@ func (d *Database) GetPhishlet(id string) (*Phishlet, error) {
 	return phishlet, nil
 }
 
-// GetPhishletByName получает phishlet по имени
+// GetPhishletByName получает phишлет по имени
 func (d *Database) GetPhishletByName(name string) (*Phishlet, error) {
 	query := `SELECT id, name, config, enabled, created_at FROM phishlets WHERE name = ?`
 
@@ -554,6 +554,13 @@ func (d *Database) GetPhishletByName(name string) (*Phishlet, error) {
 	}
 
 	return phishlet, nil
+}
+
+// UpdatePhishletEnabled изменяет состояние enabled в БД
+func (d *Database) UpdatePhishletEnabled(id string, enabled bool) error {
+	query := `UPDATE phishlets SET enabled = ? WHERE id = ?`
+	_, err := d.db.Exec(query, enabled, id)
+	return err
 }
 
 // ListPhishlets получает список phishlets

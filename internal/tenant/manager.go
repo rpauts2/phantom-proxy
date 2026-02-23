@@ -4,7 +4,6 @@ package tenant
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sync"
 	"time"
@@ -12,6 +11,31 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
+
+// Rows represents an iterator returned by QueryContext.
+// It mirrors the minimal methods used by the tenant manager and is satisfied
+// by *sql.Rows as well as by small test doubles.
+type Rows interface {
+	Close() error
+	Next() bool
+	Scan(dest ...interface{}) error
+	Columns() ([]string, error)
+}
+
+// Row represents a single row result returned by QueryRowContext.
+// *sql.Row already satisfies this interface.
+type Row interface {
+	Scan(dest ...interface{}) error
+}
+
+// DB defines the minimal database operations used by the tenant manager.
+// It is satisfied by *sql.DB in production and by test doubles in unit tests.
+type DB interface {
+	Close() error
+	ExecContext(ctx context.Context, query string, args ...interface{}) (interface{}, error)
+	QueryContext(ctx context.Context, query string, args ...interface{}) (Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...interface{}) Row
+}
 
 // Tenant представляет клиента
 type Tenant struct {
@@ -42,14 +66,15 @@ type User struct {
 // Manager управляет tenant'ами
 type Manager struct {
 	mu      sync.RWMutex
-	db      *sql.DB
+	db      DB
 	logger  *zap.Logger
 	tenants map[string]*Tenant
 	users   map[string]*User
 }
 
 // NewManager создает менеджер tenant'ов
-func NewManager(db *sql.DB, logger *zap.Logger) *Manager {
+// NewManager создает менеджер tenant'ов
+func NewManager(db DB, logger *zap.Logger) *Manager {
 	return &Manager{
 		db:      db,
 		logger:  logger,
@@ -145,10 +170,10 @@ func (m *Manager) GetTenantBySlug(ctx context.Context, slug string) (*Tenant, er
 	m.mu.RUnlock()
 
 	tenant := &Tenant{}
-	err := m.db.QueryRowContext(ctx,
+	r := m.db.QueryRowContext(ctx,
 		`SELECT id, name, slug, enabled, plan, max_sessions, max_users, created_at, expires_at, metadata
-		 FROM tenants WHERE slug = ? AND enabled = true`, slug).
-		Scan(&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Enabled, &tenant.Plan,
+		 FROM tenants WHERE slug = ? AND enabled = true`, slug)
+		err := r.Scan(&tenant.ID, &tenant.Name, &tenant.Slug, &tenant.Enabled, &tenant.Plan,
 			&tenant.MaxSessions, &tenant.MaxUsers, &tenant.CreatedAt, &tenant.ExpiresAt, &tenant.Metadata)
 
 	if err == sql.ErrNoRows {
@@ -266,6 +291,9 @@ func (m *Manager) ListTenants(ctx context.Context) ([]*Tenant, error) {
 		 FROM tenants ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
+	}
+	if rows == nil {
+		return []*Tenant{}, nil
 	}
 	defer rows.Close()
 

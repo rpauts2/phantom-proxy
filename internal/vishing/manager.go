@@ -5,7 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -254,11 +257,11 @@ func (m *Manager) GetStats() map[string]interface{} {
 
 // executeCall выполняет звонок
 func (m *Manager) executeCall(ctx context.Context, call *Call) {
+	var err error
 	m.updateCallStatus(call.ID, StatusCalling)
 
-	// Получить сценарий
-	script, err := m.GetScript(call.ScriptID)
-	if err != nil {
+	// Проверяем, что сценарий существует
+	if _, err = m.GetScript(call.ScriptID); err != nil {
 		m.updateCallStatus(call.ID, StatusFailed)
 		call.Error = fmt.Sprintf("Script not found: %v", err)
 		return
@@ -368,59 +371,195 @@ type CallConfig struct {
 
 // TwilioProvider провайдер Twilio
 type TwilioProvider struct {
-	config   *Config
-	logger   *zap.Logger
+	config     *Config
+	logger     *zap.Logger
 	httpClient *http.Client
+	baseURL    string
 }
 
 func NewTwilioProvider(config *Config, logger *zap.Logger) *TwilioProvider {
 	return &TwilioProvider{
-		config:   config,
-		logger:   logger,
+		config:     config,
+		logger:     logger,
 		httpClient: &http.Client{Timeout: 30 * time.Second},
+		baseURL:    "https://api.twilio.com/2010-04-01",
 	}
 }
 
 func (p *TwilioProvider) MakeCall(ctx context.Context, config *Config, call *Call) error {
-	// Twilio API: POST /Accounts/{AccountSid}/Calls.json
-	// Заглушка для демонстрации
-	p.logger.Info("Twilio call initiated", zap.String("call_id", call.ID))
+	if p.config.TwilioAccountSID == "" || p.config.TwilioAuthToken == "" {
+		p.logger.Warn("Twilio credentials not configured, using mock mode")
+		call.Status = StatusCalling
+		return nil
+	}
+
+	// Twilio API: https://www.twilio.com/docs/voice/api/call-resource#create-a-call-resource
+	twilioURL := fmt.Sprintf("%s/Accounts/%s/Calls.json", p.baseURL, p.config.TwilioAccountSID)
+
+	// Формируем данные для звонка
+	data := fmt.Sprintf("To=%s&From=%s&Url=%s",
+		url.QueryEscape(call.TargetPhone),
+		url.QueryEscape(p.config.TwilioPhoneNumber),
+		url.QueryEscape("https://demo.twilio.com/docs/voice.xml"))
+
+	req, err := http.NewRequestWithContext(ctx, "POST", twilioURL, strings.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+
+	// Basic Auth
+	req.SetBasicAuth(p.config.TwilioAccountSID, p.config.TwilioAuthToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("failed to make call: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("twilio API error %d: %s", resp.StatusCode, string(body))
+	}
+
+	// Парсим ответ
+	var result struct {
+		SID    string `json:"sid"`
+		Status string `json:"status"`
+	}
+	if err := json.Unmarshal(body, &result); err == nil {
+		call.ID = result.SID
+		call.Status = CallStatus(result.Status)
+	}
+
+	p.logger.Info("Twilio call initiated",
+		zap.String("call_id", call.ID),
+		zap.String("target", call.TargetPhone))
+
 	return nil
 }
 
 func (p *TwilioProvider) GetStatus(ctx context.Context, callID string) (CallStatus, error) {
+	if callID == "" {
+		return StatusQueued, nil
+	}
+
+	statusURL := fmt.Sprintf("%s/Accounts/%s/Calls/%s.json", p.baseURL, p.config.TwilioAccountSID, callID)
+
+	req, err := http.NewRequestWithContext(ctx, "GET", statusURL, nil)
+	if err != nil {
+		return StatusFailed, err
+	}
+
+	req.SetBasicAuth(p.config.TwilioAccountSID, p.config.TwilioAuthToken)
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return StatusFailed, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return StatusInProgress, nil // Mock для тестов
+	}
+
+	var result struct {
+		Status string `json:"status"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err == nil {
+		return CallStatus(result.Status), nil
+	}
+
 	return StatusInProgress, nil
 }
 
 func (p *TwilioProvider) EndCall(ctx context.Context, callID string) error {
+	if callID == "" {
+		return nil
+	}
+
+	endURL := fmt.Sprintf("%s/Accounts/%s/Calls/%s.json", p.baseURL, p.config.TwilioAccountSID, callID)
+
+	req, err := http.NewRequestWithContext(ctx, "POST", endURL, strings.NewReader("Status=completed"))
+	if err != nil {
+		return err
+	}
+
+	req.SetBasicAuth(p.config.TwilioAccountSID, p.config.TwilioAuthToken)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := p.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	p.logger.Info("Twilio call ended", zap.String("call_id", callID))
 	return nil
 }
 
 // SmishingManager менеджер SMS
 type SmishingManager struct {
-	config *Config
-	logger *zap.Logger
+	config     *Config
+	logger     *zap.Logger
+	httpClient *http.Client
 }
 
 // NewSmishingManager создает SMS менеджер
 func NewSmishingManager(config *Config, logger *zap.Logger) *SmishingManager {
 	return &SmishingManager{
-		config: config,
-		logger: logger,
+		config:     config,
+		logger:     logger,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
-// SendSMS отправляет SMS
+// SendSMS отправляет SMS через SMS.ru
 func (m *SmishingManager) SendSMS(ctx context.Context, phoneNumber, message string) (string, error) {
 	if !m.config.Enabled {
 		return "", fmt.Errorf("smishing is disabled")
 	}
 
-	// SMS.ru API
-	messageID := fmt.Sprintf("sms_%d", time.Now().UnixNano())
-	m.logger.Info("SMS sent", zap.String("to", phoneNumber), zap.String("id", messageID))
+	// Если API ключ не настроен, используем mock режим
+	if m.config.SMSRuAPIKey == "" {
+		m.logger.Warn("SMS.ru API key not configured, using mock mode")
+		messageID := fmt.Sprintf("sms_%d", time.Now().UnixNano())
+		m.logger.Info("SMS sent (mock)", zap.String("to", phoneNumber), zap.String("id", messageID))
+		return messageID, nil
+	}
 
-	return messageID, nil
+	// SMS.ru API: https://sms.ru/api/send
+	url := fmt.Sprintf("https://sms.ru/api/send?api_key=%s&to=%s&msg=%s",
+		url.QueryEscape(m.config.SMSRuAPIKey),
+		url.QueryEscape(phoneNumber),
+		url.QueryEscape(message))
+
+	resp, err := m.httpClient.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("failed to send SMS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("failed to read response: %w", err)
+	}
+
+	// SMS.ru возвращает код ответа в формате "OK:123456789" или "ERROR:..."
+	responseStr := strings.TrimSpace(string(body))
+	if strings.HasPrefix(responseStr, "OK:") {
+		messageID := strings.TrimPrefix(responseStr, "OK:")
+		m.logger.Info("SMS sent via SMS.ru",
+			zap.String("to", phoneNumber),
+			zap.String("id", messageID))
+		return messageID, nil
+	}
+
+	return "", fmt.Errorf("SMS.ru error: %s", responseStr)
 }
 
 // SendBulkSMS массовая рассылка

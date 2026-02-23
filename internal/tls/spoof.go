@@ -47,21 +47,24 @@ func NewSpoofManager() *SpoofManager {
 	}
 	
 	// Регистрация профилей
-	sm.RegisterProfile(&Profile{
-		ID:          "chrome_133",
-		ClientHello: tls.HelloChrome_133,
-		Priority:    100,
-	})
-	
+	// use latest available constants; 133 not present in utls v1.7.0
 	sm.RegisterProfile(&Profile{
 		ID:          "chrome_131",
 		ClientHello: tls.HelloChrome_131,
-		Priority:    95,
+		Priority:    100,
 	})
 	
+	// two chrome profiles – latest (131) above and older versions below
 	sm.RegisterProfile(&Profile{
 		ID:          "chrome_120",
 		ClientHello: tls.HelloChrome_120,
+		Priority:    95,
+	})
+	
+	// fallback to Chrome 100 for variety
+	sm.RegisterProfile(&Profile{
+		ID:          "chrome_100",
+		ClientHello: tls.HelloChrome_100,
 		Priority:    90,
 	})
 	
@@ -215,7 +218,11 @@ type SpoofedConnection struct {
 }
 
 // Dial создаёт TLS соединение со spoofed fingerprint
-func (sm *SpoofManager) Dial(network, addr string) (*SpoofedConnection, error) {
+// Dial создаёт TLS соединение со spoofed fingerprint.
+// Возвращает net.Conn, чтобы соответствовать TLSDialer интерфейсу.  Если
+// вызывающий хочет получить доступ к профилю, он может привести результат к
+// *SpoofedConnection.
+func (sm *SpoofManager) Dial(network, addr string) (net.Conn, error) {
 	tcpConn, err := net.Dial(network, addr)
 	if err != nil {
 		return nil, err

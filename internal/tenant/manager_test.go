@@ -2,7 +2,10 @@ package tenant
 
 import (
 	"context"
+	"database/sql"
+	"strings"
 	"testing"
+	"time"
 
 	"go.uber.org/zap"
 )
@@ -196,38 +199,174 @@ func TestGetTenantStats(t *testing.T) {
 	}
 }
 
-// Helper function to create test database
-func createTestDB(t *testing.T) *testDB {
-	// Simplified test DB helper
-	return &testDB{}
+// Helper function to create test database stub
+func createTestDB(t *testing.T) DB {
+	return newTestDB()
 }
 
+// testDB is a minimal in-memory database emulation used by unit tests.
+// It tracks tenants and users so that manager methods can observe state.
 type testDB struct {
-	closed bool
+	tenants map[string]*Tenant
+	users   map[string]*User
+}
+
+func newTestDB() *testDB {
+	return &testDB{
+		tenants: make(map[string]*Tenant),
+		users:   make(map[string]*User),
+	}
 }
 
 func (db *testDB) Close() error {
-	db.closed = true
 	return nil
 }
 
 func (db *testDB) ExecContext(ctx context.Context, query string, args ...interface{}) (interface{}, error) {
+	q := strings.ToUpper(strings.TrimSpace(query))
+	if strings.HasPrefix(q, "INSERT INTO TENANTS") {
+		id := args[0].(string)
+		name := args[1].(string)
+		slug := args[2].(string)
+		plan := args[4].(string)
+		// derive limits similarly to manager.getPlanLimit
+		maxSessions := 100
+		maxUsers := 10
+		switch plan {
+		case "pro":
+			maxSessions = 1000
+			maxUsers = 25
+		case "enterprise":
+			maxSessions = 10000
+			maxUsers = 100
+		}
+		db.tenants[slug] = &Tenant{ID: id, Name: name, Slug: slug, Plan: plan, MaxSessions: maxSessions, MaxUsers: maxUsers}
+	}
+	if strings.HasPrefix(q, "INSERT INTO USERS") {
+		id := args[0].(string)
+		tid := args[1].(string)
+		email := args[2].(string)
+		role := args[4].(string)
+		db.users[email] = &User{ID: id, TenantID: tid, Email: email, Role: role}
+	}
 	return nil, nil
 }
 
-func (db *testDB) QueryContext(ctx context.Context, query string, args ...interface{}) (*testRows, error) {
+// QueryContext returns a row iterator for LISTTENANTS or other multi-row queries
+func (db *testDB) QueryContext(ctx context.Context, query string, args ...interface{}) (Rows, error) {
+	q := strings.ToUpper(query)
+	if strings.Contains(q, "FROM TENANTS") {
+		// build rows from stored tenants
+		data := make([][]interface{}, 0, len(db.tenants))
+		for _, t := range db.tenants {
+			data = append(data, []interface{}{t.ID, t.Name, t.Slug, t.Enabled, t.Plan, t.MaxSessions, t.MaxUsers, t.CreatedAt, t.ExpiresAt, t.Metadata})
+		}
+		return &testRows{data: data}, nil
+	}
+	// default to empty
 	return &testRows{}, nil
 }
 
-func (db *testDB) QueryRowContext(ctx context.Context, query string, args ...interface{}) *testRow {
-	return &testRow{}
+// QueryRowContext handles single-row selects used by various manager methods
+func (db *testDB) QueryRowContext(ctx context.Context, query string, args ...interface{}) Row {
+	q := strings.ToUpper(query)
+	if strings.Contains(q, "FROM TENANTS WHERE SLUG") {
+		slug := args[0].(string)
+		if t, ok := db.tenants[slug]; ok {
+			return &genericRow{vals: []interface{}{t.ID, t.Name, t.Slug, t.Enabled, t.Plan, t.MaxSessions, t.MaxUsers, t.CreatedAt, t.ExpiresAt, t.Metadata}}
+		}
+		return &genericRow{err: sql.ErrNoRows}
+	}
+	if strings.Contains(q, "FROM USERS WHERE EMAIL") {
+		email := args[0].(string)
+		if u, ok := db.users[email]; ok {
+			return &genericRow{vals: []interface{}{u.ID, u.TenantID, u.Email, u.Password, u.Role, u.Enabled, u.LastLogin, u.CreatedAt}}
+		}
+		return &genericRow{err: sql.ErrNoRows}
+	}
+	if strings.Contains(q, "SELECT ID, MAX_SESSIONS") {
+		// used by CheckQuota first query
+		tid := args[0].(string)
+		for _, t := range db.tenants {
+			if t.ID == tid {
+				return &genericRow{vals: []interface{}{t.ID, t.MaxSessions, t.MaxUsers}}
+			}
+		}
+		return &genericRow{err: sql.ErrNoRows}
+	}
+	// count queries: return zero
+	if strings.Contains(q, "COUNT(*)") {
+		return &genericRow{vals: []interface{}{0}}
+	}
+	return &genericRow{err: sql.ErrNoRows}
 }
 
-type testRows struct{}
-func (r *testRows) Close() error                     { return nil }
-func (r *testRows) Next() bool                       { return false }
-func (r *testRows) Scan(dest ...interface{}) error   { return nil }
-func (r *testRows) Columns() ([]string, error)       { return nil, nil }
+// Rows implementation storing row data
 
-type testRow struct{}
-func (r *testRow) Scan(dest ...interface{}) error { return nil }
+type testRows struct {
+	idx  int
+	data [][]interface{}
+}
+
+func (r *testRows) Close() error                   { return nil }
+func (r *testRows) Next() bool {
+	if r.idx < len(r.data) {
+		r.idx++
+		return true
+	}
+	return false
+}
+func (r *testRows) Scan(dest ...interface{}) error {
+	if r.idx == 0 || r.idx > len(r.data) {
+		return sql.ErrNoRows
+	}
+	row := r.data[r.idx-1]
+	for i := range dest {
+		switch d := dest[i].(type) {
+		case *string:
+			*d = row[i].(string)
+		case *bool:
+			*d = row[i].(bool)
+		case *int:
+			*d = row[i].(int)
+		case *time.Time:
+			if v, ok := row[i].(time.Time); ok {
+				*d = v
+			}
+		default:
+			// ignore other types
+		}
+	}
+	return nil
+}
+func (r *testRows) Columns() ([]string, error)     { return nil, nil }
+
+// Row implementation with arbitrary values or error
+
+type genericRow struct {
+	vals []interface{}
+	err error
+}
+
+func (r *genericRow) Scan(dest ...interface{}) error {
+	if r.err != nil {
+		return r.err
+	}
+	for i := range dest {
+		switch d := dest[i].(type) {
+		case *string:
+			*d = r.vals[i].(string)
+		case *bool:
+			*d = r.vals[i].(bool)
+		case *int:
+			*d = r.vals[i].(int)
+		case *time.Time:
+			if v, ok := r.vals[i].(time.Time); ok {
+				*d = v
+			}
+		default:
+			// ignore
+		}
+	}
+	return nil
+}

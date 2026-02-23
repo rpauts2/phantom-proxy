@@ -1,10 +1,13 @@
 package payload
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -19,13 +22,13 @@ const (
 	TypePowerShell  = "powershell"
 )
 
-// EvasionOptions for payload generation (passed to external tools)
+// EvasionOptions for payload generation
 type EvasionOptions struct {
 	SleepObfuscation bool   `json:"sleep_obfuscation"`
 	SandboxEvasion   bool   `json:"sandbox_evasion"`
-	AMSIBypass       bool   `json:"amsi_bypass"` // Instruct external tool to include
-	Arch             string `json:"arch"`         // x86, x64
-	Encoder          string `json:"encoder"`      // x64/xor, etc.
+	AMSIBypass      bool   `json:"amsi_bypass"`
+	Arch            string `json:"arch"`
+	Encoder         string `json:"encoder"`
 }
 
 // Generator orchestrates payload creation via msfvenom, Sliver, etc.
@@ -116,40 +119,149 @@ func (g *Generator) Generate(ctx context.Context, req *GenerateRequest) (*Genera
 		}, nil
 	}
 
-	// Get file size
-	var size int64
-	// stat file...
-	_ = output
-
 	return &GenerateResult{
 		Path:     outPath,
-		Size:     size,
 		Duration: duration,
 	}, nil
 }
 
-// VulnScanConfig for lightweight vulnerability scanning
+// VulnScanConfig for vulnerability scanning
 type VulnScanConfig struct {
-	Targets    []string
-	Ports      []int
-	ScanType   string // quick, full
+	Targets  []string
+	Ports    []int
+	ScanType string // quick, full
 }
 
 // VulnScanResult single finding
 type VulnScanResult struct {
-	Target   string
-	Port     int
-	Service  string
-	Banner   string
-	Possible []string // e.g. ["CVE-2020-xxx", "MS17-010"]
+	Target   string   `json:"target"`
+	Port     int      `json:"port"`
+	Service  string   `json:"service"`
+	Banner   string   `json:"banner"`
+	Possible []string `json:"possible"`
 }
 
-// VulnScanner conceptual scanner (delegates to nmap, etc.)
-type VulnScanner struct{}
+// VulnScanner performs vulnerability scanning
+type VulnScanner struct {
+	nmapPath string
+}
 
-// Scan runs scan - в production: вызов nmap -sV --script vuln
+// NewVulnScanner creates vulnerability scanner
+func NewVulnScanner(nmapPath string) *VulnScanner {
+	if nmapPath == "" {
+		nmapPath = "nmap"
+	}
+	return &VulnScanner{nmapPath: nmapPath}
+}
+
+// Scan runs nmap vulnerability scan
 func (s *VulnScanner) Scan(ctx context.Context, cfg *VulnScanConfig) ([]VulnScanResult, error) {
-	_ = ctx
-	_ = cfg
-	return nil, nil
+	if len(cfg.Targets) == 0 {
+		return nil, fmt.Errorf("no targets specified")
+	}
+
+	ports := intSliceToString(cfg.Ports)
+	portsStr := strings.Join(ports, ",")
+	if portsStr == "" {
+		portsStr = "22,80,443,445,3389,8080,8443"
+	}
+
+	args := []string{"-sV", "-p", portsStr, "-T4"}
+	
+	switch cfg.ScanType {
+	case "full":
+		args = append(args, "-sC")
+	case "quick":
+		// quick mode - just version detection
+	default:
+		// default scan
+	}
+	
+	args = append(args, cfg.Targets...)
+
+	cmd := exec.CommandContext(ctx, s.nmapPath, args...)
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("nmap failed: %w", err)
+	}
+
+	return s.parseNmapOutput(string(output)), nil
+}
+
+func (s *VulnScanner) parseNmapOutput(output string) []VulnScanResult {
+	var results []VulnScanResult
+	scanner := bufio.NewScanner(strings.NewReader(output))
+
+	var currentHost string
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		
+		// Parse host
+		if strings.Contains(line, "Nmap scan report for") {
+			parts := strings.Fields(line)
+			if len(parts) >= 5 {
+				currentHost = parts[4]
+			}
+		}
+		
+		// Parse port info
+		if strings.HasPrefix(strings.TrimSpace(line), "Ports:") {
+			// Parse port details
+			portStr := strings.TrimPrefix(line, "Ports:")
+			portParts := strings.Split(portStr, ",")
+			for _, pp := range portParts {
+				pp = strings.TrimSpace(pp)
+				if strings.Contains(pp, "/open") {
+					fields := strings.Fields(pp)
+					if len(fields) >= 2 {
+						port, _ := strconv.Atoi(strings.Split(fields[0], "/")[0])
+						service := fields[len(fields)-1]
+						
+						results = append(results, VulnScanResult{
+							Target:   currentHost,
+							Port:     port,
+							Service:  service,
+							Possible: s.GetCommonVulns(service, ""),
+						})
+					}
+				}
+			}
+		}
+	}
+	
+	return results
+}
+
+func intSliceToString(slice []int) []string {
+	result := make([]string, len(slice))
+	for i, v := range slice {
+		result[i] = strconv.Itoa(v)
+	}
+	return result
+}
+
+// GetCommonVulns returns common CVEs for a service
+func (s *VulnScanner) GetCommonVulns(service, version string) []string {
+	vulns := map[string][]string{
+		"ssh":       {"CVE-2023-48795", "CVE-2020-15778"},
+		"http":      {"CVE-2023-44487", "CVE-2023-32315"},
+		"apache":    {"CVE-2023-25532", "CVE-2022-31813"},
+		"nginx":     {"CVE-2023-44487", "CVE-2022-2509"},
+		"smb":       {"CVE-2017-0143", "CVE-2017-0144"},
+		"rdp":       {"CVE-2019-0708", "CVE-2020-0612"},
+		"mysql":     {"CVE-2021-43297", "CVE-2021-44228"},
+		"postgres":  {"CVE-2024-1597", "CVE-2023-2454"},
+		"redis":    {"CVE-2023-22476", "CVE-2022-0546"},
+		"mongodb":  {"CVE-2023-0340", "CVE-2021-41524"},
+	}
+
+	service = strings.ToLower(service)
+	for key, values := range vulns {
+		if strings.Contains(service, key) {
+			return values
+		}
+	}
+
+	return nil
 }

@@ -78,7 +78,7 @@ func (eb *EventBus) Unsubscribe(eventType string, handler EventHandler) {
 
 	handlers := eb.handlers[eventType]
 	for i, h := range handlers {
-		if h == handler {
+		if &h == &handler {
 			eb.handlers[eventType] = append(handlers[:i], handlers[i+1:]...)
 			break
 		}

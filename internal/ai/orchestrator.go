@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -179,6 +180,21 @@ Report:`, campaignData)
 
 // generateText отправляет запрос к AI модели
 func (a *AIOrchestrator) generateText(ctx context.Context, prompt string) (string, error) {
+	// Пробуем внешний AI сервис
+	if a.endpoint != "" && a.endpoint != "http://localhost:8081" {
+		text, err := a.callExternalAI(ctx, prompt)
+		if err == nil {
+			return text, nil
+		}
+		a.logger.Warn("External AI failed, using local generation", zap.Error(err))
+	}
+
+	// Локальная генерация на основе шаблонов
+	return a.localGenerate(prompt), nil
+}
+
+// callExternalAI вызывает внешний AI сервис
+func (a *AIOrchestrator) callExternalAI(ctx context.Context, prompt string) (string, error) {
 	request := map[string]interface{}{
 		"model":       a.model,
 		"prompt":      prompt,
@@ -191,7 +207,6 @@ func (a *AIOrchestrator) generateText(ctx context.Context, prompt string) (strin
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Попытки с retry
 	var lastErr error
 	for i := 0; i < a.config.MaxRetries; i++ {
 		resp, err := a.client.Post(
@@ -229,6 +244,73 @@ func (a *AIOrchestrator) generateText(ctx context.Context, prompt string) (strin
 	}
 
 	return "", fmt.Errorf("all retries failed: %w", lastErr)
+}
+
+// localGenerate локальная генерация на основе шаблонов
+func (a *AIOrchestrator) localGenerate(prompt string) string {
+	promptLower := strings.ToLower(prompt)
+
+	// Определяем тип по ключевым словам
+	if strings.Contains(promptLower, "phishing") || strings.Contains(promptLower, "verify") {
+		return `Dear Valued Customer,
+
+We have detected unusual activity on your account. For your security, please verify your information immediately.
+
+Click here to verify: [LINK]
+
+If you did not request this, please ignore this message.
+
+Security Team`
+	}
+
+	if strings.Contains(promptLower, "invoice") || strings.Contains(promptLower, "payment") {
+		return `INVOICE NOTIFICATION
+
+Your invoice #INV-2024-001 is ready for review.
+
+Amount: $1,247.50
+Due Date: Within 7 days
+
+Please download and review the attached invoice.
+
+Accounting Department`
+	}
+
+	if strings.Contains(promptLower, "meeting") || strings.Contains(promptLower, "invite") {
+		return `Meeting Invitation
+
+You have been invited to a meeting.
+
+Topic: Security Update
+Time: Tomorrow at 10:00 AM
+Location: Conference Room A / Zoom
+
+Please confirm your attendance.
+
+Best regards`
+	}
+
+	if strings.Contains(promptLower, "password") || strings.Contains(promptLower, "reset") {
+		return `Password Reset Request
+
+We received a request to reset your password.
+
+If you made this request, click here: [RESET_LINK]
+
+If not, your account may be at risk. Please contact support immediately.
+
+Support Team`
+	}
+
+	// Default template
+	return `Dear User,
+
+This is an important notification regarding your account.
+
+Please review the information and take appropriate action.
+
+Thank you,
+Support Team`
 }
 
 // HealthCheck проверяет доступность AI сервиса

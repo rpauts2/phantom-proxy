@@ -1,9 +1,8 @@
-# PhantomProxy v14.0 - Playwright Browser Pool
+// PhantomProxy v14.0 - Playwright Browser Pool
 // Package playwright provides browser automation for captcha solving
 package playwright
 
 import (
-	"context"
 	"fmt"
 	"sync"
 	"time"

@@ -101,3 +101,6 @@ dump.rdb
 coverage/
 coverage.txt
 *.cover
+
+# Stakpak session files
+.stakpak/session*

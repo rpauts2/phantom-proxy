@@ -93,7 +93,7 @@ func main() {
 	logger.Info("Database initialized", zap.String("path", cfg.DatabasePath))
 
 	// Создание HTTP прокси
-	httpProxy, err := proxy.NewHTTPProxy(cfg, db, logger)
+	httpProxy, err := proxy.NewHTTPProxy(cfg, db, nil, logger)
 	if err != nil {
 		logger.Fatal("Failed to create HTTP proxy", zap.Error(err))
 	}
@@ -244,7 +244,7 @@ func buildC2Manager(v13 *config.V13Config, logger *zap.Logger) *c2.Manager {
 		}
 	}
 
-	return c2.NewManager(adapters...)
+	return c2.NewManager(logger, adapters)
 }
 
 func getStr(m map[string]interface{}, key string) string {

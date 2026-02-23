@@ -3,13 +3,13 @@
 
 # Сеть
 bind_ip: "0.0.0.0"
-https_port: 8443
-http3_port: 8443
+https_port: 443
+http3_port: 443
 http3_enabled: false
 
 # Домен и сертификаты
-domain: "phantom.local"
-auto_cert: false
+domain: "verdebudget.ru"
+auto_cert: true
 cert_path: "./certs/cert.pem"
 key_path: "./certs/key.pem"
 
@@ -43,7 +43,7 @@ telegram_chat_id: 0
 # API
 api_enabled: true
 api_port: 8080
-api_key: "change-me-to-secure-random-string"
+api_key: "vp_v14_secure_k9Xm2pL7qR3sT8wY"
 
 # Multi-tenant
 multi_tenant_enabled: false

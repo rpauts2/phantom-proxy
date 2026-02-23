@@ -3,6 +3,7 @@ package risk
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"sync"
 	"time"
@@ -21,6 +22,7 @@ type RiskScore struct {
 	BehaviorData map[string]interface{} `json:"behavior_data"`
 	LastUpdated  time.Time              `json:"last_updated"`
 	Trend        string                 `json:"trend"` // improving, stable, worsening
+	History      []ScoreSnapshot        `json:"history"`
 }
 
 // BehaviorEvent событие поведения

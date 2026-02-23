@@ -12,14 +12,13 @@ import (
 
 	"github.com/phantom-proxy/phantom-proxy/internal/config"
 	"github.com/phantom-proxy/phantom-proxy/internal/database"
-	tls_spoof "github.com/phantom-proxy/phantom-proxy/internal/tls"
 )
 
 // HTTP3Proxy HTTP/3 QUIC прокси
 type HTTP3Proxy struct {
 	cfg        *config.Config
 	db         *database.Database
-	tlsManager *tls_spoof.SpoofManager
+	tlsManager TLSDialer
 	logger     *zap.Logger
 	server     *http3.Server
 	handler    http.Handler
@@ -29,7 +28,7 @@ type HTTP3Proxy struct {
 func NewHTTP3Proxy(
 	cfg *config.Config,
 	db *database.Database,
-	tlsManager *tls_spoof.SpoofManager,
+	tlsManager TLSDialer,
 	logger *zap.Logger,
 ) (*HTTP3Proxy, error) {
 	
@@ -90,7 +89,7 @@ func (p *HTTP3Proxy) getHTTPProxy() (*HTTPProxy, error) {
 	// Или общая логика между HTTP/2 и HTTP/3
 	
 	// Пока создаём новый (это неэффективно, но для MVP подойдёт)
-	return NewHTTPProxy(p.cfg, p.db, p.logger)
+	return NewHTTPProxy(p.cfg, p.db, p.tlsManager, p.logger)
 }
 
 // Start запускает HTTP/3 сервер

