@@ -1,311 +1,240 @@
-# 👻 PHANTOMPROXY v14.0
+# PhantomProxy v14.0
 
-**Enterprise Red Team Simulation Platform**
+**Продвинутый фишинговый прокси-сервер для Red Team операций и пентеста**
 
-[![Version](https://img.shields.io/badge/version-14.0.0-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Go](https://img.shields.io/badge/go-1.21+-blue)]()
-[![Python](https://img.shields.io/badge/python-3.11+-blue)]()
-[![CI/CD](https://github.com/rpauts2/phantom-proxy/actions/workflows/ci-cd.yml/badge.svg)]()
+[![Go](https://img.shields.io/badge/Go-1.21+-blue.svg)](https://golang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/Version-14.0-red.svg)](CHANGELOG.md)
 
----
+## 🚀 Особенности
 
-## ⚡ QUICK START
+### 🔒 Безопасность и Анонимность
+- **TLS/SSL терминация** с автоматической генерацией сертификатов
+- **HTTP/3 поддержка** для современных браузеров
+- **DNS маскировка** и ротация DNS-провайдеров
+- **JA3/JA4 спуфинг** для обхода детектирования
+- **ГОСТ 28147-89 шифрование** для российских стандартов
 
-### Linux (1 command):
+### 🎯 Фишинговые Векторы
+- **Phishlets** - модули для популярных сервисов (Microsoft 365, Google Workspace, VK, Telegram и др.)
+- **Smishing** - SMS фишинг с интеграцией Twilio
+- **Vishing** - голосовой фишинг с TTS и ASR
+- **Email фишинг** с поддержкой SMTP и шаблонами
+- **ClickFix** - автоматическое исправление ссылок в письмах
+
+### 🤖 AI и ML
+- **LLM интеграция** (Ollama, OpenAI, Gemini)
+- **AI-оркестратор** для автоматизации атак
+- **ML Risk Score** - оценка рисков на основе машинного обучения
+- **AI-анализ** захваченных данных
+
+### 📊 Мониторинг и Аналитика
+- **Grafana Dashboard** для визуализации атак
+- **Prometheus** метрики и мониторинг
+- **Loki** логирование и анализ
+- **Реалтайм статистика** по сессиям и кампаниям
+
+### 🔧 Интеграции
+- **C2 Frameworks**: Cobalt Strike, Sliver, Empire
+- **Gophish** - интеграция с платформой фишинга
+- **Telegram Bot** для уведомлений
+- **API** для внешних систем
+
+## 📦 Установка
+
+### Требования
+- Go 1.21+
+- Docker & Docker Compose
+- Node.js 20+ (для frontend)
+
+### Быстрый старт
+
 ```bash
-sudo ./install.sh
-```
-
-### Windows (1 command):
-```powershell
-.\install.ps1
-```
-
-### Docker:
-```bash
-docker-compose up -d
-```
-
----
-
-## 🎯 FEATURES
-
-### Core
-- ✅ **AiTM Reverse Proxy** - HTTP/HTTPS/HTTP3 with TLS 1.3
-- ✅ **Session Management** - Redis-backed with cookie capture
-- ✅ **Phishlet Engine** - 10+ pre-configured templates
-- ✅ **2FA/MFA Bypass** - Token interception and replay
-
-### AI/ML
-- ✅ **LangGraph Agents** - 4 autonomous AI agents
-- ✅ **RAG System** - ChromaDB vector store
-- ✅ **Smart Scoring** - 8-factor behavioral analysis
-- ✅ **Auto-Phishlet** - AI-generated phishing templates
-
-### Enterprise
-- ✅ **Multi-Tenant** - Full isolation with quotas
-- ✅ **Zero-Trust mTLS** - Client certificate authentication
-- ✅ **Auth Integration** - Keycloak/Zitadel support
-- ✅ **FSTEC Compliance** - GOST encryption for logs
-
-### Attack Simulation
-- ✅ **Vishing** - Voice phishing with Twilio/SMS.ru
-- ✅ **Smishing** - SMS phishing campaigns
-- ✅ **C2 Integration** - Sliver, Empire, Cobalt Strike
-
----
-
-## 📦 INSTALLATION
-
-### Automated Install:
-
-**Linux:**
-```bash
+# Клонирование репозитория
 git clone https://github.com/rpauts2/phantom-proxy.git
 cd phantom-proxy
-sudo ./install.sh
-```
 
-**Windows:**
-```powershell
-git clone https://github.com/rpauts2/phantom-proxy.git
-cd phantom-proxy
-.\install.ps1
-```
-
-### Manual Install:
-
-**1. Dependencies:**
-```bash
-# Go 1.21+
-go mod download
-
-# Python 3.11+
-pip install -r requirements.txt
-
-# Node.js 20+
-cd frontend && npm install
-```
-
-**2. Generate Certificates:**
-```bash
-mkdir -p certs
-openssl req -x509 -newkey rsa:4096 \
-  -keyout certs/key.pem -out certs/cert.pem \
-  -days 365 -nodes
-```
-
-**3. Build:**
-```bash
+# Сборка
 go build -o phantom-proxy ./cmd/phantom-proxy-v14
-```
 
-**4. Run:**
-```bash
+# Запуск сервисов
+docker-compose up -d
+
+# Запуск основного сервиса
 ./phantom-proxy --config config.yaml
 ```
 
----
+### Docker Compose
 
-## 🚀 USAGE
-
-### Console UI:
 ```bash
-python console.py
-```
-
-**Commands:**
-```
-help          - Show help
-status        - System status
-dashboard     - Main dashboard
-sessions      - Active sessions
-phishlets     - Loaded phishlets
-logs          - System logs
-quit          - Exit
-```
-
-### Web Interface:
-- **Frontend:** http://localhost:3000
-- **API:** http://localhost:8080
-- **Proxy:** https://localhost:8443
-
-### Docker:
-```bash
-# Start all services
+# Запуск всех сервисов
 docker-compose up -d
 
-# View logs
-docker-compose logs -f
-
-# Stop
-docker-compose down
+# Проверка статуса
+docker-compose ps
 ```
 
-### Makefile Commands:
-```bash
-make help         # Show all commands
-make build        # Build binary
-make test         # Run tests
-make docker       # Start Docker
-make health       # Health check
-make backup       # Create backup
+## 🎛️ Конфигурация
+
+### Основной конфиг (`config.yaml`)
+
+```yaml
+# Сеть
+bind_ip: "0.0.0.0"
+https_port: 443
+domain: "your-domain.com"
+
+# SSL сертификаты
+auto_cert: true
+cert_path: "./certs/cert.pem"
+key_path: "./certs/key.pem"
+
+# API
+api_port: 8080
+api_key: "your-secure-api-key"
+
+# База данных
+database_path: "./phantom.db"
+
+# Модули
+modules:
+  ai: true
+  ml: true
+  risk: true
+  campaign: true
+  email: true
+  phishing: true
+  smishing: true
+  vishing: true
 ```
 
----
+### Phishlets
 
-## 📁 PROJECT STRUCTURE
+Поддерживаются фишлеты для:
+- Microsoft 365 / Office 365
+- Google Workspace
+- VK, Telegram, Instagram
+- Yandex, Mail.ru
+- Сбербанк, Тинькофф
+- Wildberries, Ozon
 
-```
-phantom-proxy/
-├── cmd/phantom-proxy-v14/    # Go entry point
-├── core/proxy/               # AiTM engine
-├── internal/                 # Services
-│   ├── tenant/              # Multi-tenant
-│   ├── risk/                # Risk scoring
-│   ├── vishing/             # Voice phishing
-│   ├── c2/                  # C2 integration
-│   ├── mtls/                # Zero-trust
-│   ├── auth/                # Authentication
-│   └── fstec/                # FSTEC compliance
-├── ai_service/              # AI service (LangGraph)
-├── api/                     # FastAPI backend
-├── frontend/                # Next.js dashboard
-├── configs/phishlets/       # Phishlet configs
-├── deploy/                  # DevOps configs
-├── install.sh               # Linux installer
-├── install.ps1              # Windows installer
-└── docker-compose.yml       # Docker stack
-```
+## 🚀 Использование
 
----
-
-## 📊 API ENDPOINTS
-
-### Core (59 endpoints):
-- `GET /health` - Health check
-- `GET /api/v1/stats` - Statistics
-- `GET/POST /api/v1/sessions` - Session management
-- `GET/POST /api/v1/phishlets` - Phishlet management
-- `POST /api/v1/risk/events` - Risk scoring
-- `GET/POST /api/v1/fstec/audit` - Audit logs
-
-### AI Service:
-- `POST /v1/generate/email` - Generate phishing email
-- `POST /v1/generate/phishlet` - Generate phishlet
-- `POST /v1/rag/search` - RAG search
-- `POST /api/v1/agents/run-campaign` - AI campaign
-
----
-
-## 🧪 TESTING
+### Запуск с веб-панелью
 
 ```bash
-# All tests
-make test
+# Запуск frontend
+cd frontend
+npm install
+npm run dev
 
-# Go tests
-make test-go
+# Веб-панель доступна на http://localhost:3000
+```
 
-# Python tests
-make test-python
+### API Примеры
 
+```bash
 # Health check
-make health
+curl http://localhost:8080/health
 
-# Coverage
-go test -v -cover ./...
+# Статистика
+curl -H "Authorization: Bearer your-api-key" \
+  http://localhost:8080/api/v1/stats
+
+# Включение phishlet
+curl -X POST http://localhost:8080/api/v1/phishlets/microsoft_365/enable \
+  -H "Authorization: Bearer your-api-key"
 ```
 
----
+### Docker Compose сервисы
 
-## 🔧 MAINTENANCE
+| Сервис | Порт | URL |
+|--------|------|-----|
+| PhantomProxy | 443 | https://your-domain.com |
+| Grafana | 3001 | http://localhost:3001 |
+| Prometheus | 9090 | http://localhost:9090 |
+| Loki | 3100 | http://localhost:3100 |
 
-### Backup:
+## 📊 Веб-панель
+
+### Dashboard (Grafana)
+- Мониторинг активности системы
+- Статистика по сессиям и атакам
+- Анализ рисков и угроз
+- Просмотр логов в реальном времени
+
+### API Endpoints
+- `/api/v1/stats` - Статистика системы
+- `/api/v1/sessions` - Список сессий
+- `/api/v1/phishlets` - Управление phishlets
+- `/api/v1/campaigns` - Управление кампаниями
+
+## 🔧 Разработка
+
+### Сборка
+
 ```bash
-# Create backup
-make backup
+# Сборка основного бинарника
+go build -o phantom-proxy ./cmd/phantom-proxy-v14
 
-# Or manually
-python backup.py backup
-
-# List backups
-python backup.py list
-
-# Restore
-python backup.py restore backup_20260220.tar.gz
+# Сборка с тегами
+go build -tags=debug -o phantom-proxy ./cmd/phantom-proxy-v14
 ```
 
-### Health Check:
+### Тестирование
+
 ```bash
-# Script
-./healthcheck.sh
+# Запуск тестов
+go test ./...
 
-# Or make
-make health
+# Запуск конкретного пакета
+go test ./internal/proxy/...
 ```
 
-### Update:
+### Frontend разработка
+
 ```bash
-git pull
-make build
-sudo systemctl restart phantomproxy
+cd frontend
+npm install
+npm run dev
 ```
 
----
+## 📚 Документация
 
-## 📖 DOCUMENTATION
+- [Полное руководство](FULL_MANUAL.md)
+- [API Документация](docs/API.md)
+- [Phishlets](configs/phishlets/README.md)
+- [Docker Compose](docker-compose.yml)
 
-- **[API Documentation](docs/API.md)** - Full API reference
-- **[Deployment Guide](docs/DEPLOYMENT.md)** - Production deployment
-- **[Phishlet Guide](docs/PHISHLETS.md)** - Creating phishlets
-- **[Architecture](docs/ARCHITECTURE.md)** - System architecture
-- **[Security](SECURITY.md)** - Security policy
-- **[Contributing](CONTRIBUTING.md)** - Contribution guidelines
+## ⚠️ Предупреждение
 
----
+**Этот инструмент предназначен ТОЛЬКО для:**
+- Авторизованного тестирования безопасности
+- Red Team операций с письменным разрешением
+- Обучения и исследований в контролируемой среде
 
-## ⚠️ LEGAL DISCLAIMER
+**Запрещено использование:**
+- Для несанкционированного доступа к системам
+- В целях мошенничества или кражи данных
+- Без письменного разрешения владельца систем
 
-This software is for **authorized security testing only**.
+## 🤝 Вклад
 
-**Required:**
-- ✅ Written permission from system owners
-- ✅ Signed Rules of Engagement (RoE)
-- ✅ Proper legal authorization
+Приветствуются pull requests! Перед отправкой убедитесь, что:
+1. Код проходит все тесты
+2. Добавлена документация для новых функций
+3. Соблюдены стандарты кодирования
 
-**Prohibited:**
-- ❌ Unauthorized access
-- ❌ Credential theft
-- ❌ Fraud or identity theft
+## 📄 Лицензия
 
-By using this software, you agree to comply with all applicable laws.
+MIT License - см. [LICENSE](LICENSE) файл
 
----
+## 🙏 Благодарности
 
-## 🏆 VERSIONS
-
-| Version | Status | Features |
-|---------|--------|----------|
-| v14.0.0 | ✅ Current | Full enterprise stack |
-| v13.0.0 | ⚠️ Legacy | Basic multi-tenant |
-| v12.0.0 | ❌ EOL | Initial release |
+- [Go Team](https://golang.org/) за отличный язык
+- [Grafana Labs](https://grafana.com/) за мониторинг
+- [Ollama](https://ollama.ai/) за LLM интеграцию
 
 ---
 
-## 📞 SUPPORT
-
-- **GitHub Issues:** https://github.com/rpauts2/phantom-proxy/issues
-- **Security:** security@phantomseclabs.com
-- **Documentation:** https://docs.phantomproxy.io
-
----
-
-## 📄 LICENSE
-
-MIT License - see [LICENSE](LICENSE) for details.
-
----
-
-**© 2026 PhantomSec Labs. All rights reserved.**
+**⚠️ Используйте ответственно и только в законных целях!**
