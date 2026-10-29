@@ -17,7 +17,7 @@ var (
 	idPattern             = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	allowedEvents         = map[string]struct{}{
 		"visit":             {},
-		"click":              {},
+		"click":             {},
 		"training_complete": {},
 	}
 )
