@@ -97,3 +97,14 @@ func TestPersistentStoreEnforcesRetentionLimitAfterRestart(t *testing.T) {
 		t.Fatalf("sequence counter = %d, want 3", reopened.nextID)
 	}
 }
+
+func TestPersistentStoreRejectsOversizedSnapshot(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.json")
+	if err := os.WriteFile(path, make([]byte, maxSnapshotBytes+1), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, err := OpenPersistentStore(path, 10, time.Now().Add(time.Hour), "demo")
+	if !errors.Is(err, ErrInvalidSnapshot) {
+		t.Fatalf("expected oversized snapshot to be rejected, got %v", err)
+	}
+}
