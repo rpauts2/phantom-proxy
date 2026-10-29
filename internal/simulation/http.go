@@ -37,6 +37,9 @@ func Handler(store *Store) http.Handler {
 		if store.IsStopped() {
 			status = http.StatusServiceUnavailable
 			state = "stopped"
+		} else if store.IsScopeExpired() {
+			status = http.StatusGone
+			state = "scope_expired"
 		}
 		writeJSON(w, status, map[string]string{"status": state})
 	})
@@ -46,9 +49,16 @@ func Handler(store *Store) http.Handler {
 			methodNotAllowed(w, http.MethodGet)
 			return
 		}
+		expiresAt := store.ScopeExpiresAt()
+		var expiresAtValue any
+		if !expiresAt.IsZero() {
+			expiresAtValue = expiresAt.UTC().Format("2006-01-02T15:04:05Z")
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"stopped": store.IsStopped(),
-			"events":  len(store.List(500)),
+			"stopped":          store.IsStopped(),
+			"scope_expired":    store.IsScopeExpired(),
+			"scope_expires_at": expiresAtValue,
+			"events":           len(store.List(500)),
 		})
 	})
 
@@ -111,6 +121,9 @@ func Handler(store *Store) http.Handler {
 				case errors.Is(err, ErrLabStopped):
 					status = http.StatusServiceUnavailable
 					message = "simulation lab is stopped"
+				case errors.Is(err, ErrScopeExpired):
+					status = http.StatusGone
+					message = "simulation scope has expired; restart with a new explicit scope"
 				}
 				writeJSON(w, status, map[string]string{"error": message})
 				return
