@@ -74,6 +74,27 @@ func Handler(store *Store) http.Handler {
 		writeJSON(w, status, map[string]string{"status": state})
 	})
 
+	mux.HandleFunc("/api/v1/summary", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		events := store.List(500)
+		byType := map[string]int{"visit": 0, "click": 0, "training_complete": 0}
+		byCampaign := make(map[string]int)
+		for _, event := range events {
+			byType[event.Type]++
+			byCampaign[event.CampaignID]++
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"retained_events": len(events),
+			"by_type": byType,
+			"by_campaign": byCampaign,
+			"stopped": store.IsStopped(),
+			"scope_expired": store.IsScopeExpired(),
+		})
+	})
+
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)
