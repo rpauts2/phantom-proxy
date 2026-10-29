@@ -1,8 +1,10 @@
 package simulation
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -57,8 +59,14 @@ func OpenPersistentStore(path string, maxEvents int, initialExpiry time.Time, ca
 	}
 
 	var snapshot storeSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&snapshot); err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrInvalidSnapshot, err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		return nil, fmt.Errorf("%w: snapshot must contain one JSON object", ErrInvalidSnapshot)
 	}
 	if snapshot.Version != snapshotVersion || len(snapshot.Events) > store.max {
 		return nil, ErrInvalidSnapshot
@@ -140,6 +148,15 @@ func (s *Store) persistLocked() error {
 		return err
 	}
 	if err := os.Rename(tmpName, s.persistencePath); err != nil {
+		return err
+	}
+	// Sync the parent directory so the rename itself is durable across a crash.
+	dirHandle, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer dirHandle.Close()
+	if err := dirHandle.Sync(); err != nil {
 		return err
 	}
 	return nil
