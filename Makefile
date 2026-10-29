@@ -50,7 +50,7 @@ run: build
 	@./$(BINARY) -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)" -data "$(LAB_DATA)"
 
 lab:
-	@$(GO) run ./cmd/simulation-lab -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)"
+	@$(GO) run ./cmd/simulation-lab -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)" -data "$(LAB_DATA)"
 
 test: test-lab
 
