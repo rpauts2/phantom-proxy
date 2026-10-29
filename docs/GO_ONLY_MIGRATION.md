@@ -59,7 +59,7 @@ One Go runtime and one canonical Go entrypoint for the supported product. Extern
 make lab LAB_CAMPAIGNS=demo
 ```
 
-The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses. An explicit comma-separated allowlist is required; use synthetic campaign identifiers only. Scope lifetime defaults to 8 hours and must be between 1 minute and 24 hours (`-scope-duration 4h`). The scope expires automatically and then rejects new events.
+The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses. An explicit comma-separated allowlist is required; use synthetic campaign identifiers only. Scope lifetime defaults to 8 hours and must be between 1 minute and 24 hours (`-scope-duration 4h`). The scope expires automatically and then rejects new events. By default the local snapshot is `.phantom-lab/events.json`; the original scope deadline is restored on restart and cannot be extended by changing the duration flag. Use a new `LAB_DATA`/`-data` path to start a separate scope.
 
 - `GET /`: dashboard served directly by Go.
 - `GET /healthz`: process health, returns unavailable after emergency stop or scope expiry.
