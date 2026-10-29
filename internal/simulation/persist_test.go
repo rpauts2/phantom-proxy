@@ -108,3 +108,26 @@ func TestPersistentStoreRejectsOversizedSnapshot(t *testing.T) {
 		t.Fatalf("expected oversized snapshot to be rejected, got %v", err)
 	}
 }
+
+func TestPersistentStoreRollsBackEventWhenSnapshotWriteFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "events.json")
+	store, err := OpenPersistentStore(path, 10, time.Now().Add(time.Hour), "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Add("demo", "person_01", "visit"); err == nil {
+		t.Fatal("expected snapshot write failure")
+	}
+	if got := len(store.List(10)); got != 0 {
+		t.Fatalf("failed durable write left %d in-memory events, want 0", got)
+	}
+	if store.nextID != 0 {
+		t.Fatalf("sequence counter advanced after failed write: %d", store.nextID)
+	}
+}
