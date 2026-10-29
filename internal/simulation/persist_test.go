@@ -131,3 +131,20 @@ func TestPersistentStoreRollsBackEventWhenSnapshotWriteFails(t *testing.T) {
 		t.Fatalf("sequence counter advanced after failed write: %d", store.nextID)
 	}
 }
+
+func TestPersistentStoreRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
+	for name, snapshot := range map[string]string{
+		"unknown field": `{"version":1,"next_sequence":0,"stopped":false,"campaign_ids":["demo"],"events":[],"password":"unexpected"}`,
+		"trailing object": `{"version":1,"next_sequence":0,"stopped":false,"campaign_ids":["demo"],"events":[]} {}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "events.json")
+			if err := os.WriteFile(path, []byte(snapshot), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := OpenPersistentStore(path, 10, time.Now().Add(time.Hour), "demo"); !errors.Is(err, ErrInvalidSnapshot) {
+				t.Fatalf("expected invalid snapshot, got %v", err)
+			}
+		})
+	}
+}
