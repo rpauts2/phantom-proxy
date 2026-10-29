@@ -35,6 +35,9 @@ func main() {
 	for _, id := range strings.Split(*campaigns, ",") {
 		id = strings.TrimSpace(id)
 		if id != "" {
+			if !simulation.ValidID(id) {
+				log.Fatalf("invalid synthetic campaign ID %q: use 1-64 letters, digits, underscores, or hyphens", id)
+			}
 			allowlist = append(allowlist, id)
 		}
 	}
