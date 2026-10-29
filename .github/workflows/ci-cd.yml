@@ -49,6 +49,9 @@ jobs:
           mkdir -p dist
           CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/simulation-lab ./cmd/simulation-lab
 
+      - name: Build minimal Go-only container image
+        run: docker build -f Dockerfile.simulation -t phantomproxy-lab:ci .
+
       - name: Upload test coverage
         if: always()
         uses: actions/upload-artifact@v4
