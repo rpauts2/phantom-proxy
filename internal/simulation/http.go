@@ -57,6 +57,10 @@ func Handler(store *Store) http.Handler {
 			methodNotAllowed(w, http.MethodPost)
 			return
 		}
+		if r.Header.Get("X-Phantom-Lab-Action") != "stop" {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing local action header"})
+			return
+		}
 		store.Stop()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 	})
@@ -75,6 +79,10 @@ func Handler(store *Store) http.Handler {
 			}
 			writeJSON(w, http.StatusOK, map[string]any{"events": store.List(limit)})
 		case http.MethodPost:
+			if r.Header.Get("X-Phantom-Lab-Request") != "1" {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing local request header"})
+				return
+			}
 			r.Body = http.MaxBytesReader(w, r.Body, 4096)
 			decoder := json.NewDecoder(r.Body)
 			decoder.DisallowUnknownFields()
