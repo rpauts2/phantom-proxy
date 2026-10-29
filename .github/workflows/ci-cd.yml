@@ -43,10 +43,10 @@ jobs:
           fi
 
       - name: Test simulation package with race detector
-        run: go test -race -coverprofile=coverage.out ./internal/simulation
+        run: go test -race -coverprofile=coverage.out ./internal/simulation ./cmd/simulation-lab
 
       - name: Vet simulation package
-        run: go vet ./internal/simulation
+        run: go vet ./internal/simulation ./cmd/simulation-lab
 
       - name: Build local simulation lab
         run: |
