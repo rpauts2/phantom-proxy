@@ -1,152 +1,65 @@
-# CI/CD Pipeline for PhantomProxy v14.0
-name: CI/CD
+name: Go validation
 
 on:
   push:
     branches: [main, develop]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 env:
-  GO_VERSION: '1.21'
-  PYTHON_VERSION: '3.11'
-  NODE_VERSION: '20'
+  GO_VERSION: "1.24.0"
 
 jobs:
-  # Go Tests
-  test-go:
+  simulation-lab:
+    name: Validate safe Go simulation lab
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: ${{ env.GO_VERSION }}
-      
-      - name: Download dependencies
-        run: go mod download
-      
-      - name: Run tests
-        run: go test -v -race -coverprofile=coverage.out ./...
-      
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
-        with:
-          file: ./coverage.out
+          cache: true
 
-  # Python Tests
-  test-python:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Install dependencies
+      - name: Verify Go formatting
+        shell: bash
         run: |
-          pip install -r requirements.txt
-          pip install pytest pytest-cov
-      
-      - name: Run tests
-        run: pytest --cov=ai_service --cov=api tests/
-      
-      - name: Upload coverage
-        uses: codecov/codecov-action@v3
+          files="$(gofmt -l cmd/simulation-lab internal/simulation)"
+          if [[ -n "$files" ]]; then
+            echo "The following Go files need gofmt:"
+            echo "$files"
+            exit 1
+          fi
 
-  # Build Go Binary
-  build-go:
-    runs-on: ubuntu-latest
-    needs: [test-go]
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      
-      - name: Build
-        run: go build -ldflags="-s -w" -o phantom-proxy ./cmd/phantom-proxy-v14
-      
-      - name: Upload artifact
+      - name: Test simulation package with race detector
+        run: go test -race -coverprofile=coverage.out ./internal/simulation
+
+      - name: Vet simulation package
+        run: go vet ./internal/simulation
+
+      - name: Build local simulation lab
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o dist/simulation-lab ./cmd/simulation-lab
+
+      - name: Upload test coverage
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: phantom-proxy-linux
-          path: phantom-proxy
+          name: simulation-lab-coverage
+          path: coverage.out
+          if-no-files-found: ignore
 
-  # Build Docker Images
-  build-docker:
-    runs-on: ubuntu-latest
-    needs: [test-go, test-python]
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Login to Docker Hub
-        uses: docker/login-action@v3
+      - name: Upload Go binary
+        uses: actions/upload-artifact@v4
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-      
-      - name: Build and push
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          push: true
-          tags: |
-            phantomproxy/phantom-proxy:latest
-            phantomproxy/phantom-proxy:${{ github.sha }}
-
-  # Lint
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: ${{ env.GO_VERSION }}
-      
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v3
-        with:
-          version: latest
-
-  # Security Scan
-  security:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
-      
-      - name: Upload Trivy results to GitHub Security
-        uses: github/codeql-action/upload-sarif@v3
-        with:
-          sarif_file: 'trivy-results.sarif'
-
-  # Deploy to Staging
-  deploy-staging:
-    runs-on: ubuntu-latest
-    needs: [build-docker, lint, security]
-    if: github.ref == 'refs/heads/main'
-    steps:
-      - uses: actions/checkout@v4
-      
-      - name: Deploy to staging
-        run: |
-          echo "Deploying to staging environment..."
-          # Add your deployment commands here
+          name: simulation-lab-linux-amd64
+          path: dist/simulation-lab
+          if-no-files-found: error
