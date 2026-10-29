@@ -63,6 +63,7 @@ The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind
 
 - `GET /`: dashboard served directly by Go.
 - `GET /healthz`: process health, returns unavailable after emergency stop or scope expiry.
+- `GET /metrics`: Prometheus-format counters for retained synthetic events and lab state.
 - `GET /api/v1/status`: stopped state, scope expiry, expiry timestamp, and retained event count.
 - `GET /api/v1/events`: recent synthetic events.
 - `POST /api/v1/events`: add an event with `campaign_id`, `participant_id`, and `type`. The only accepted event types are `visit`, `click`, and `training_complete`.
