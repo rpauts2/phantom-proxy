@@ -6,7 +6,7 @@ The repository is **not yet a pure-Go application**. The Go module is present, b
 
 This plan deliberately leaves `config.yaml` unchanged, as requested.
 
-A first isolated Go-only component now exists at `cmd/simulation-lab` with its event store and HTTP API in `internal/simulation`. It binds to a loopback IP only, requires an explicit campaign allowlist, stores a bounded in-memory history, accepts only `visit`, `click`, and `training_complete` events, rejects unknown JSON fields, and supports an emergency stop. It is a safe prototype, not yet a replacement for the existing application.
+A first isolated Go-only component now exists at `cmd/simulation-lab` with its event store and HTTP API in `internal/simulation`. It binds to a loopback IP only, requires an explicit campaign allowlist, stores a bounded history in an atomically replaced local JSON snapshot, accepts only `visit`, `click`, and `training_complete` events, rejects unknown JSON fields, and supports an emergency stop. It is a safe prototype, not yet a replacement for the existing application.
 
 ## Target
 
@@ -84,4 +84,4 @@ Stop ingestion immediately:
 curl -X POST http://127.0.0.1:8088/admin/stop -H 'X-Phantom-Lab-Action: stop'
 ```
 
-Events are held in memory and disappear when the process exits. This prototype intentionally does not collect credentials, cookies, tokens, arbitrary payloads, or external redirect targets.
+Events, the emergency-stop state, the campaign allowlist, and the original scope deadline are persisted in a local JSON snapshot using a temporary file, fsync, and atomic rename. Snapshot files are created with owner-only permissions. A saved scope deadline is authoritative after restart and cannot be extended by changing the duration flag. Use a new `-data` path when intentionally creating a new lab scope. This prototype intentionally does not collect credentials, cookies, tokens, arbitrary payloads, or external redirect targets.
