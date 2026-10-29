@@ -14,6 +14,7 @@ var (
 	ErrInvalidEvent       = errors.New("unsupported simulation event type")
 	ErrCampaignNotInScope = errors.New("campaign is not in the explicit simulation allowlist")
 	ErrLabStopped         = errors.New("simulation lab is stopped")
+	ErrScopeExpired       = errors.New("simulation scope has expired")
 	idPattern             = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	allowedEvents         = map[string]struct{}{
 		"visit":             {},
@@ -37,12 +38,18 @@ type Store struct {
 	max       int
 	nextID    uint64
 	events    []Event
-	allowlist map[string]struct{}
-	stopped   bool
+	allowlist     map[string]struct{}
+	scopeExpiresAt time.Time
+	stopped       bool
 }
 
 // NewStore requires an explicit campaign allowlist. With no IDs, all ingestion is denied.
 func NewStore(maxEvents int, campaignIDs ...string) *Store {
+	return NewStoreWithExpiry(maxEvents, time.Time{}, campaignIDs...)
+}
+
+// NewStoreWithExpiry configures a fixed campaign allowlist and an optional scope deadline.
+func NewStoreWithExpiry(maxEvents int, scopeExpiresAt time.Time, campaignIDs ...string) *Store {
 	if maxEvents < 1 {
 		maxEvents = 500
 	}
@@ -54,9 +61,10 @@ func NewStore(maxEvents int, campaignIDs ...string) *Store {
 		}
 	}
 	return &Store{
-		max:       maxEvents,
-		events:    make([]Event, 0, maxEvents),
-		allowlist: allowlist,
+		max:            maxEvents,
+		events:         make([]Event, 0, maxEvents),
+		allowlist:      allowlist,
+		scopeExpiresAt: scopeExpiresAt,
 	}
 }
 
@@ -73,6 +81,18 @@ func (s *Store) IsStopped() bool {
 	return s.stopped
 }
 
+func (s *Store) ScopeExpiresAt() time.Time {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.scopeExpiresAt
+}
+
+func (s *Store) IsScopeExpired() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return !s.scopeExpiresAt.IsZero() && !time.Now().Before(s.scopeExpiresAt)
+}
+
 func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) {
 	if !idPattern.MatchString(campaignID) || !idPattern.MatchString(participantID) {
 		return Event{}, ErrInvalidID
@@ -86,6 +106,9 @@ func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) 
 
 	if s.stopped {
 		return Event{}, ErrLabStopped
+	}
+	if !s.scopeExpiresAt.IsZero() && !time.Now().Before(s.scopeExpiresAt) {
+		return Event{}, ErrScopeExpired
 	}
 	if _, ok := s.allowlist[campaignID]; !ok {
 		return Event{}, ErrCampaignNotInScope
