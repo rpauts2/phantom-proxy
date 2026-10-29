@@ -65,7 +65,7 @@ The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind
 - `GET /healthz`: process health, returns unavailable after emergency stop or scope expiry.
 - `GET /metrics`: Prometheus-format counters for retained synthetic events and lab state.
 - `GET /api/v1/status`: stopped state, scope expiry, expiry timestamp, and retained event count.
-- `GET /api/v1/events`: recent synthetic events.
+- `GET /api/v1/events`: recent synthetic events as JSON.\n- `GET /api/v1/events.csv`: export the last 1-500 synthetic events as CSV, with a fixed schema containing only event sequence, synthetic campaign/participant IDs, event type, and timestamp.
 - `POST /api/v1/events`: add an event with `campaign_id`, `participant_id`, and `type`. The only accepted event types are `visit`, `click`, and `training_complete`.
 - `POST /admin/stop`: stop accepting new events until the process restarts. Requires the local action header used by the dashboard.
 
