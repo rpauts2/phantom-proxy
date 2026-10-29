@@ -76,11 +76,11 @@ func NewStoreWithExpiry(maxEvents int, scopeExpiresAt time.Time, campaignIDs ...
 }
 
 // Stop is an irreversible emergency stop for this process lifetime.
-func (s *Store) Stop() {
+func (s *Store) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopped = true
-	_ = s.persistLocked()
+	return s.persistLocked()
 }
 
 func (s *Store) IsStopped() bool {
