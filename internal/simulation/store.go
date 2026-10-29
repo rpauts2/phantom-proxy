@@ -16,6 +16,7 @@ var (
 	ErrCampaignNotInScope = errors.New("campaign is not in the explicit simulation allowlist")
 	ErrLabStopped         = errors.New("simulation lab is stopped")
 	ErrScopeExpired       = errors.New("simulation scope has expired")
+	ErrPersistence        = errors.New("simulation state could not be persisted")
 	idPattern             = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
 	allowedEvents         = map[string]struct{}{
 		"visit":             {},
@@ -141,7 +142,7 @@ func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) 
 	if err := s.persistLocked(); err != nil {
 		s.events = previousEvents
 		s.nextID = previousID
-		return Event{}, fmt.Errorf("persist simulation event: %w", err)
+		return Event{}, fmt.Errorf("%w: %v", ErrPersistence, err)
 	}
 	return event, nil
 }
