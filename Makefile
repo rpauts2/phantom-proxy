@@ -8,6 +8,7 @@ DOCKER ?= docker
 DOCKER_COMPOSE ?= docker compose
 BINARY ?= phantom-proxy
 ENTRYPOINT ?= ./cmd/phantom-proxy-v14
+LAB_CAMPAIGNS ?= demo
 
 help:
 	@echo "PhantomProxy - Go developer commands"
@@ -43,7 +44,7 @@ run: build
 	@./$(BINARY) --config config.yaml
 
 lab:
-	@$(GO) run ./cmd/simulation-lab
+	@$(GO) run ./cmd/simulation-lab -campaigns "$(LAB_CAMPAIGNS)"
 
 test: test-go
 
