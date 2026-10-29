@@ -5,6 +5,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -15,8 +16,17 @@ import (
 )
 
 func main() {
-	addr := flag.String("addr", "127.0.0.1:8088", "HTTP listen address (defaults to localhost only)")
+	addr := flag.String("addr", "127.0.0.1:8088", "HTTP listen address (must be a loopback IP)")
 	flag.Parse()
+
+	host, _, err := net.SplitHostPort(*addr)
+	if err != nil {
+		log.Fatalf("invalid listen address: %v", err)
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsLoopback() {
+		log.Fatal("simulation lab only binds to a loopback IP; use 127.0.0.1 or ::1")
+	}
 
 	server := &http.Server{
 		Addr:              *addr,
