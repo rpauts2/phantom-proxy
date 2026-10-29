@@ -122,7 +122,10 @@ func Handler(store *Store) http.Handler {
 			writeJSON(w, http.StatusForbidden, map[string]string{"error": "missing local action header"})
 			return
 		}
-		store.Stop()
+		if err := store.Stop(); err != nil {
+			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "lab stopped in memory but failed to persist stop state"})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 	})
 
