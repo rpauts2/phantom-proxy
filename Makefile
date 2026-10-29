@@ -11,6 +11,7 @@ BINARY ?= simulation-lab
 ENTRYPOINT ?= ./cmd/simulation-lab
 LAB_CAMPAIGNS ?= demo
 SCOPE_DURATION ?= 8h
+LAB_DATA ?= .phantom-lab/events.json
 
 help:
 	@echo "PhantomProxy - Go-first commands"
@@ -18,7 +19,7 @@ help:
 	@echo "  make install       - Verify Go and download modules"
 	@echo "  make build         - Build the supported Go simulation lab"
 	@echo "  make run           - Build and run the local Go simulation lab"
-	@echo "  make lab           - Run the Go simulation lab without building a binary"
+	@echo "  make lab           - Run the Go simulation lab without building a binary\n\t@echo "  LAB_DATA           - Path for persistent synthetic-event snapshot""
 	@echo "  make test          - Test the supported Go simulation lab with race detection"
 	@echo "  make test-go       - Test all legacy Go packages (may expose existing issues)"
 	@echo "  make lint          - Vet the supported Go simulation lab"
@@ -45,7 +46,7 @@ build:
 	@$(GO) build -trimpath -o $(BINARY) $(ENTRYPOINT)
 
 run: build
-	@./$(BINARY) -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)"
+	@./$(BINARY) -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)" -data "$(LAB_DATA)"
 
 lab:
 	@$(GO) run ./cmd/simulation-lab -campaigns "$(LAB_CAMPAIGNS)" -scope-duration "$(SCOPE_DURATION)"
