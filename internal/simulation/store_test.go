@@ -6,12 +6,15 @@ import (
 )
 
 func TestStoreValidatesAndBoundsEvents(t *testing.T) {
-	store := NewStore(2)
-	if _, err := store.Add("campaign", "participant", "password_captured"); !errors.Is(err, ErrInvalidEvent) {
+	store := NewStore(2, "campaign-1")
+	if _, err := store.Add("campaign-1", "participant", "password_captured"); !errors.Is(err, ErrInvalidEvent) {
 		t.Fatalf("expected unsupported event type error, got %v", err)
 	}
 	if _, err := store.Add("../campaign", "participant", "click"); !errors.Is(err, ErrInvalidID) {
 		t.Fatalf("expected invalid id error, got %v", err)
+	}
+	if _, err := store.Add("outside-scope", "participant", "click"); !errors.Is(err, ErrCampaignNotInScope) {
+		t.Fatalf("expected out-of-scope error, got %v", err)
 	}
 
 	for _, eventType := range []string{"visit", "click", "training_complete"} {
@@ -33,7 +36,7 @@ func TestStoreValidatesAndBoundsEvents(t *testing.T) {
 }
 
 func TestStoreListReturnsIndependentSlice(t *testing.T) {
-	store := NewStore(3)
+	store := NewStore(3, "campaign")
 	_, _ = store.Add("campaign", "participant", "visit")
 
 	first := store.List(1)
@@ -41,5 +44,24 @@ func TestStoreListReturnsIndependentSlice(t *testing.T) {
 	second := store.List(1)
 	if second[0].Type != "visit" {
 		t.Fatal("mutating returned slice changed stored event")
+	}
+}
+
+func TestStoreRequiresExplicitAllowlistAndSupportsEmergencyStop(t *testing.T) {
+	unscoped := NewStore(10)
+	if _, err := unscoped.Add("demo", "person", "visit"); !errors.Is(err, ErrCampaignNotInScope) {
+		t.Fatalf("empty allowlist should deny ingestion, got %v", err)
+	}
+
+	store := NewStore(10, "demo")
+	if _, err := store.Add("demo", "person", "visit"); err != nil {
+		t.Fatalf("in-scope event rejected: %v", err)
+	}
+	store.Stop()
+	if !store.IsStopped() {
+		t.Fatal("stop state was not set")
+	}
+	if _, err := store.Add("demo", "person", "click"); !errors.Is(err, ErrLabStopped) {
+		t.Fatalf("expected emergency stop to reject event, got %v", err)
 	}
 }
