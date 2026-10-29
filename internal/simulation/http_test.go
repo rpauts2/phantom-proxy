@@ -216,3 +216,41 @@ func TestCSVExportRejectsInvalidLimitAndMethods(t *testing.T) {
 		}
 	}
 }
+
+func TestSummaryEndpointAggregatesOnlyRetainedSyntheticEvents(t *testing.T) {
+	store := NewStore(3, "demo", "second")
+	_, _ = store.Add("demo", "person_01", "visit")
+	_, _ = store.Add("demo", "person_02", "click")
+	_, _ = store.Add("second", "person_03", "training_complete")
+	handler := Handler(store)
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/summary", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("summary status = %d, want %d: %s", res.Code, http.StatusOK, res.Body.String())
+	}
+	var payload struct {
+		RetainedEvents int            `json:"retained_events"`
+		ByType         map[string]int `json:"by_type"`
+		ByCampaign     map[string]int `json:"by_campaign"`
+		Stopped        bool           `json:"stopped"`
+		ScopeExpired   bool           `json:"scope_expired"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.RetainedEvents != 3 || payload.ByType["visit"] != 1 || payload.ByType["click"] != 1 || payload.ByType["training_complete"] != 1 {
+		t.Fatalf("unexpected summary counts: %#v", payload)
+	}
+	if payload.ByCampaign["demo"] != 2 || payload.ByCampaign["second"] != 1 || payload.Stopped || payload.ScopeExpired {
+		t.Fatalf("unexpected summary state: %#v", payload)
+	}
+}
+
+func TestSummaryEndpointRejectsNonGet(t *testing.T) {
+	res := httptest.NewRecorder()
+	Handler(NewStore(10, "demo")).ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/v1/summary", nil))
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("summary POST status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
+	}
+}
