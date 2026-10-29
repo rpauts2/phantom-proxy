@@ -11,6 +11,7 @@ import (
 )
 
 const snapshotVersion = 1
+const maxSnapshotBytes = 2 << 20
 
 var ErrInvalidSnapshot = errors.New("invalid simulation snapshot")
 
@@ -29,9 +30,19 @@ func OpenPersistentStore(path string, maxEvents int, initialExpiry time.Time, ca
 	if path == "" {
 		return nil, errors.New("persistence path is required")
 	}
+	if initialExpiry.IsZero() {
+		return nil, errors.New("simulation scope expiry is required")
+	}
 	store := NewStoreWithExpiry(maxEvents, initialExpiry, campaignIDs...)
 	store.persistencePath = path
 
+	info, statErr := os.Stat(path)
+	if statErr == nil && info.Size() > maxSnapshotBytes {
+		return nil, fmt.Errorf("%w: snapshot exceeds %d bytes", ErrInvalidSnapshot, maxSnapshotBytes)
+	}
+	if statErr != nil && !errors.Is(statErr, os.ErrNotExist) {
+		return nil, fmt.Errorf("inspect simulation snapshot: %w", statErr)
+	}
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		store.mu.Lock()
