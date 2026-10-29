@@ -104,6 +104,16 @@ func TestDashboardServesStaticAssetsWithSecurityHeaders(t *testing.T) {
 		if res.Header().Get("Content-Security-Policy") == "" {
 			t.Fatalf("GET %s missing Content-Security-Policy", path)
 		}
+		for header, want := range map[string]string{
+			"Referrer-Policy":                 "no-referrer",
+			"Permissions-Policy":               "camera=(), microphone=(), geolocation=()",
+			"Cross-Origin-Resource-Policy":     "same-origin",
+			"X-Permitted-Cross-Domain-Policies": "none",
+		} {
+			if got := res.Header().Get(header); got != want {
+				t.Errorf("GET %s header %s = %q, want %q", path, header, got, want)
+			}
+		}
 		if res.Body.Len() == 0 {
 			t.Fatalf("GET %s returned empty body", path)
 		}

@@ -42,7 +42,7 @@ func Handler(store *Store) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_retained Number of synthetic events currently retained in memory.\n# TYPE phantom_lab_events_retained gauge\nphantom_lab_events_retained %d\n", len(events))
+		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_retained Number of synthetic events currently retained by the simulation store.\n# TYPE phantom_lab_events_retained gauge\nphantom_lab_events_retained %d\n", len(events))
 		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_by_type_retained Synthetic events retained by type.\n# TYPE phantom_lab_events_by_type_retained gauge\n")
 		for _, eventType := range []string{"visit", "click", "training_complete"} {
 			_, _ = fmt.Fprintf(w, "phantom_lab_events_by_type_retained{type=%q} %d\n", eventType, counts[eventType])
@@ -233,6 +233,10 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		w.Header().Set("Cross-Origin-Resource-Policy", "same-origin")
+		w.Header().Set("X-Permitted-Cross-Domain-Policies", "none")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
