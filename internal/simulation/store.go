@@ -3,6 +3,7 @@ package simulation
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -39,8 +40,9 @@ type Store struct {
 	nextID         uint64
 	events         []Event
 	allowlist      map[string]struct{}
-	scopeExpiresAt time.Time
-	stopped        bool
+	scopeExpiresAt  time.Time
+	stopped         bool
+	persistencePath string
 }
 
 // ValidID reports whether an identifier is safe for use as a synthetic campaign or participant ID.
@@ -78,6 +80,7 @@ func (s *Store) Stop() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stopped = true
+	_ = s.persistLocked()
 }
 
 func (s *Store) IsStopped() bool {
@@ -119,6 +122,8 @@ func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) 
 		return Event{}, ErrCampaignNotInScope
 	}
 
+	previousEvents := append([]Event(nil), s.events...)
+	previousID := s.nextID
 	s.nextID++
 	event := Event{
 		Sequence:      s.nextID,
@@ -132,6 +137,11 @@ func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) 
 		s.events[len(s.events)-1] = event
 	} else {
 		s.events = append(s.events, event)
+	}
+	if err := s.persistLocked(); err != nil {
+		s.events = previousEvents
+		s.nextID = previousID
+		return Event{}, fmt.Errorf("persist simulation event: %w", err)
 	}
 	return event, nil
 }
