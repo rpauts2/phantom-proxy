@@ -59,26 +59,28 @@ One Go runtime and one canonical Go entrypoint for the supported product. Extern
 make lab LAB_CAMPAIGNS=demo
 ```
 
-The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses. An explicit comma-separated allowlist is required; use synthetic campaign identifiers only.
+The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses. An explicit comma-separated allowlist is required; use synthetic campaign identifiers only. Scope lifetime defaults to 8 hours and must be between 1 minute and 24 hours (`-scope-duration 4h`). The scope expires automatically and then rejects new events.
 
-- `GET /healthz`: process health, returns unavailable after the emergency stop.
-- `GET /api/v1/status`: stopped state and retained event count.
+- `GET /`: dashboard served directly by Go.
+- `GET /healthz`: process health, returns unavailable after emergency stop or scope expiry.
+- `GET /api/v1/status`: stopped state, scope expiry, expiry timestamp, and retained event count.
 - `GET /api/v1/events`: recent synthetic events.
 - `POST /api/v1/events`: add an event with `campaign_id`, `participant_id`, and `type`. The only accepted event types are `visit`, `click`, and `training_complete`.
-- `POST /admin/stop`: stop accepting new events until the process restarts.
+- `POST /admin/stop`: stop accepting new events until the process restarts. Requires the local action header used by the dashboard.
 
 Example event:
 
 ```sh
 curl -X POST http://127.0.0.1:8088/api/v1/events \
   -H 'Content-Type: application/json' \
+  -H 'X-Phantom-Lab-Request: 1' \
   -d '{"campaign_id":"demo","participant_id":"person_01","type":"click"}'
 ```
 
 Stop ingestion immediately:
 
 ```sh
-curl -X POST http://127.0.0.1:8088/admin/stop
+curl -X POST http://127.0.0.1:8088/admin/stop -H 'X-Phantom-Lab-Action: stop'
 ```
 
 Events are held in memory and disappear when the process exits. This prototype intentionally does not collect credentials, cookies, tokens, arbitrary payloads, or external redirect targets.
