@@ -150,15 +150,6 @@ func (s *Store) persistLocked() error {
 	if err := os.Rename(tmpName, s.persistencePath); err != nil {
 		return err
 	}
-	// Sync the parent directory so the rename itself is durable across a crash.
-	dirHandle, err := os.Open(dir)
-	if err != nil {
-		return err
-	}
-	defer dirHandle.Close()
-	if err := dirHandle.Sync(); err != nil {
-		return err
-	}
 	return nil
 }
 
