@@ -19,7 +19,8 @@ help:
 	@echo "  make install       - Verify Go and download modules"
 	@echo "  make build         - Build the supported Go simulation lab"
 	@echo "  make run           - Build and run the local Go simulation lab"
-	@echo "  make lab           - Run the Go simulation lab without building a binary\n\t@echo "  LAB_DATA           - Path for persistent synthetic-event snapshot""
+	@echo "  make lab           - Run the Go simulation lab without building a binary
+\t@echo "  LAB_DATA           - Path for persistent synthetic-event snapshot""
 	@echo "  make test          - Test the supported Go simulation lab with race detection"
 	@echo "  make test-go       - Test all legacy Go packages (may expose existing issues)"
 	@echo "  make lint          - Vet the supported Go simulation lab"
