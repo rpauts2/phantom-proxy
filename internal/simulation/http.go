@@ -40,10 +40,10 @@ func Handler(store *Store) http.Handler {
 		}
 		w.Header().Set("Content-Type", "text/plain; version=0.0.4; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_retained Number of synthetic events currently retained in memory.\\n# TYPE phantom_lab_events_retained gauge\\nphantom_lab_events_retained %d\\n", len(events))
-		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_by_type_retained Synthetic events retained by type.\\n# TYPE phantom_lab_events_by_type_retained gauge\\n")
+		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_retained Number of synthetic events currently retained in memory.\n# TYPE phantom_lab_events_retained gauge\nphantom_lab_events_retained %d\n", len(events))
+		_, _ = fmt.Fprintf(w, "# HELP phantom_lab_events_by_type_retained Synthetic events retained by type.\n# TYPE phantom_lab_events_by_type_retained gauge\n")
 		for _, eventType := range []string{"visit", "click", "training_complete"} {
-			_, _ = fmt.Fprintf(w, "phantom_lab_events_by_type_retained{type=%q} %d\\n", eventType, counts[eventType])
+			_, _ = fmt.Fprintf(w, "phantom_lab_events_by_type_retained{type=%q} %d\n", eventType, counts[eventType])
 		}
 		stopped := 0
 		if store.IsStopped() {
@@ -53,7 +53,7 @@ func Handler(store *Store) http.Handler {
 		if store.IsScopeExpired() {
 			expired = 1
 		}
-		_, _ = fmt.Fprintf(w, "phantom_lab_stopped %d\\nphantom_lab_scope_expired %d\\n", stopped, expired)
+		_, _ = fmt.Fprintf(w, "phantom_lab_stopped %d\nphantom_lab_scope_expired %d\n", stopped, expired)
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
