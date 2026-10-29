@@ -6,29 +6,30 @@ The repository is **not yet a pure-Go application**. The Go module is present, b
 
 This plan deliberately leaves `config.yaml` unchanged, as requested.
 
-A first isolated Go-only component now exists at `cmd/simulation-lab` with its event store and HTTP API in `internal/simulation`. It binds to a loopback IP only, stores a bounded in-memory history, accepts only `visit`, `click`, and `training_complete` events, and rejects unknown JSON fields. It is a safe prototype, not yet a replacement for the existing application. Repository tests have been added, but could not be executed from the current environment because GitHub could not be reached from the local shell.
+A first isolated Go-only component now exists at `cmd/simulation-lab` with its event store and HTTP API in `internal/simulation`. It binds to a loopback IP only, requires an explicit campaign allowlist, stores a bounded in-memory history, accepts only `visit`, `click`, and `training_complete` events, rejects unknown JSON fields, and supports an emergency stop. It is a safe prototype, not yet a replacement for the existing application.
 
 ## Target
 
-One Go runtime and one canonical Go entrypoint for the application. External infrastructure such as a database or a separately installed local model may remain optional adapters, but no Python, Node.js, or Celery process should be required to build, run, test, or administer the core application.
+One Go runtime and one canonical Go entrypoint for the supported product. External infrastructure such as a database or a separately installed local model may remain optional adapters, but no Python, Node.js, or Celery process should be required to build, run, test, or administer the core application.
 
 ## Phases
 
 1. **Inventory and baseline**
-   - Keep `cmd/phantom-proxy-v14` as the provisional entrypoint until its call graph and behavior are verified.
+   - Keep `cmd/phantom-proxy-v14` as the provisional legacy entrypoint until its call graph and behavior are verified.
    - Run `go test -race ./...`, `go vet ./...`, and `go build ./cmd/phantom-proxy-v14` in an environment with Go 1.24+.
    - Record failures instead of claiming a clean build when they have not been run.
    - Mark stubs and duplicated entrypoints; don't silently route production traffic to placeholder implementations.
 
 2. **Go-only developer workflow**
    - Make Go module download, formatting, tests, vetting, and build the default Makefile workflow.
+   - The CI workflow now validates the isolated Go simulation component only. It intentionally does not run Python/Node jobs, publish Docker images, or deploy anything.
    - Keep the old multi-runtime Compose stack explicitly labeled as legacy until it is replaced.
    - Align the documented Go version with `go.mod` (currently Go 1.24.0).
 
 3. **Safe application boundary**
    - Make the supported product a controlled security-awareness/simulation lab.
    - Use synthetic identities and seeded test events only. Record visits, clicks, and training completion, not real passwords, session cookies, or bearer tokens.
-   - Enforce an explicit lab allowlist, scope expiry, audit trail, and an emergency stop.
+   - Require an explicit campaign allowlist, bind to loopback only, keep an emergency stop, and expose status/health.
    - Do not enable credential capture, evasion, or remote-command execution as part of the migration.
 
 4. **Replace non-Go services**
@@ -39,7 +40,7 @@ One Go runtime and one canonical Go entrypoint for the application. External inf
    - Keep LLM access behind a small Go interface. An external model server can be optional, but it must not be required for core startup.
 
 5. **Reliability and release gates**
-   - Add unit tests for config parsing (without editing the live config file), API authorization, input validation, shutdown, migrations, and simulation scope enforcement.
+   - Add unit tests for API validation, allowlist enforcement, emergency stop, request limits, and shutdown.
    - Add CI for formatting, vet, tests, dependency review, and build only after the supported safe application boundary is established.
    - Pin runtime/build versions and verify the final image contains only the intended Go binary, certificates, and explicitly required data files.
 
@@ -49,20 +50,22 @@ One Go runtime and one canonical Go entrypoint for the application. External inf
 - `make test`, `make lint`, and `make build` use Go tooling only.
 - The supported launch path starts one canonical Go binary.
 - Legacy Compose services are either removed or clearly optional and no longer presented as part of the Go-only product.
-- Tests demonstrate that simulation scope restrictions and shutdown behavior work.
+- CI tests demonstrate that simulation scope restrictions and shutdown behavior work.
 - No claim of full Go-only status is made until the above checks have actually passed.
 
 ## Run the safe simulation prototype
 
 ```sh
-make lab
+make lab LAB_CAMPAIGNS=demo
 ```
 
-The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses.
+The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses. An explicit comma-separated allowlist is required; use synthetic campaign identifiers only.
 
-- `GET /healthz`: process health.
+- `GET /healthz`: process health, returns unavailable after the emergency stop.
+- `GET /api/v1/status`: stopped state and retained event count.
 - `GET /api/v1/events`: recent synthetic events.
 - `POST /api/v1/events`: add an event with `campaign_id`, `participant_id`, and `type`. The only accepted event types are `visit`, `click`, and `training_complete`.
+- `POST /admin/stop`: stop accepting new events until the process restarts.
 
 Example event:
 
@@ -70,6 +73,12 @@ Example event:
 curl -X POST http://127.0.0.1:8088/api/v1/events \
   -H 'Content-Type: application/json' \
   -d '{"campaign_id":"demo","participant_id":"person_01","type":"click"}'
+```
+
+Stop ingestion immediately:
+
+```sh
+curl -X POST http://127.0.0.1:8088/admin/stop
 ```
 
 Events are held in memory and disappear when the process exits. This prototype intentionally does not collect credentials, cookies, tokens, arbitrary payloads, or external redirect targets.
