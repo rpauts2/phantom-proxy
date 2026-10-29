@@ -2,8 +2,8 @@ package simulation
 
 import (
 	"encoding/json"
-	"fmt"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
