@@ -55,7 +55,7 @@ lab:
 test: test-lab
 
 test-lab:
-	@$(GO) test -race ./internal/simulation -timeout 2m
+	@$(GO) test -race ./internal/simulation ./cmd/simulation-lab -timeout 2m
 
 # Full-repository checks remain available for migration work, but are not the
 # release gate for the supported simulation-only product yet.
