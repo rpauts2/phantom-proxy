@@ -15,19 +15,30 @@ type eventRequest struct {
 	Type          string `json:"type"`
 }
 
-// Handler exposes health, status, emergency stop, and synthetic-event endpoints.
+// Handler exposes the local dashboard, health, status, emergency stop, and synthetic-event endpoints.
 func Handler(store *Store) http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/" {
+			http.NotFound(w, r)
+			return
+		}
+		serveDashboard(w, r)
+	})
+	mux.HandleFunc("/style.css", serveDashboardCSS)
+	mux.HandleFunc("/app.js", serveDashboardJS)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
 			methodNotAllowed(w, http.MethodGet)
 			return
 		}
 		status := http.StatusOK
+		state := "ok"
 		if store.IsStopped() {
 			status = http.StatusServiceUnavailable
+			state = "stopped"
 		}
-		writeJSON(w, status, map[string]any{"status": map[bool]string{true: "stopped", false: "ok"}[store.IsStopped()]})
+		writeJSON(w, status, map[string]string{"status": state})
 	})
 
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
@@ -108,8 +119,9 @@ func Handler(store *Store) http.Handler {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("X-Frame-Options", "DENY")
 		w.Header().Set("Cache-Control", "no-store")
-		w.Header().Set("Content-Security-Policy", "default-src 'none'; frame-ancestors 'none'")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'")
 		next.ServeHTTP(w, r)
 	})
 }
