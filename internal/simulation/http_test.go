@@ -172,3 +172,47 @@ func TestMetricsEndpointReportsOnlyBoundedSyntheticCounters(t *testing.T) {
 		t.Fatal("metrics output contains literal escaped newlines instead of line breaks")
 	}
 }
+
+func TestCSVExportContainsOnlySyntheticEventFields(t *testing.T) {
+	store := NewStore(10, "demo")
+	_, _ = store.Add("demo", "person_01", "visit")
+	handler := Handler(store)
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/api/v1/events.csv?limit=10", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("CSV status = %d, want %d: %s", res.Code, http.StatusOK, res.Body.String())
+	}
+	if got := res.Header().Get("Content-Type"); got != "text/csv; charset=utf-8" {
+		t.Fatalf("unexpected CSV content type: %q", got)
+	}
+	if got := res.Header().Get("Content-Disposition"); got != "attachment; filename=phantom-lab-events.csv" {
+		t.Fatalf("unexpected content disposition: %q", got)
+	}
+	for _, expected := range []string{"sequence,campaign_id,participant_id,type,occurred_at", "demo,person_01,visit"} {
+		if !bytes.Contains(res.Body.Bytes(), []byte(expected)) {
+			t.Fatalf("CSV response missing %q: %s", expected, res.Body.String())
+		}
+	}
+	if bytes.Contains(res.Body.Bytes(), []byte("password")) || bytes.Contains(res.Body.Bytes(), []byte("cookie")) {
+		t.Fatal("CSV unexpectedly contains credential/session fields")
+	}
+}
+
+func TestCSVExportRejectsInvalidLimitAndMethods(t *testing.T) {
+	handler := Handler(NewStore(10, "demo"))
+	for _, tc := range []struct {
+		method string
+		path   string
+		want   int
+	}{
+		{http.MethodGet, "/api/v1/events.csv?limit=501", http.StatusBadRequest},
+		{http.MethodPost, "/api/v1/events.csv", http.StatusMethodNotAllowed},
+	} {
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, httptest.NewRequest(tc.method, tc.path, nil))
+		if res.Code != tc.want {
+			t.Errorf("%s %s status = %d, want %d", tc.method, tc.path, res.Code, tc.want)
+		}
+	}
+}
