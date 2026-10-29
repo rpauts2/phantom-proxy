@@ -43,6 +43,11 @@ type Store struct {
 	stopped        bool
 }
 
+// ValidID reports whether an identifier is safe for use as a synthetic campaign or participant ID.
+func ValidID(id string) bool {
+	return idPattern.MatchString(id)
+}
+
 // NewStore requires an explicit campaign allowlist. With no IDs, all ingestion is denied.
 func NewStore(maxEvents int, campaignIDs ...string) *Store {
 	return NewStoreWithExpiry(maxEvents, time.Time{}, campaignIDs...)
@@ -94,7 +99,7 @@ func (s *Store) IsScopeExpired() bool {
 }
 
 func (s *Store) Add(campaignID, participantID, eventType string) (Event, error) {
-	if !idPattern.MatchString(campaignID) || !idPattern.MatchString(participantID) {
+	if !ValidID(campaignID) || !ValidID(participantID) {
 		return Event{}, ErrInvalidID
 	}
 	if _, ok := allowedEvents[eventType]; !ok {
