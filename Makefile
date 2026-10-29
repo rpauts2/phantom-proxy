@@ -1,7 +1,7 @@
 # PhantomProxy: Go-first developer workflow.
 # The application migration to a single Go runtime is tracked in docs/GO_ONLY_MIGRATION.md.
 
-.PHONY: help install install-go build run test test-go clean docker docker-build docker-stop docker-legacy lint fmt check dev health status
+.PHONY: help install install-go build run test test-go clean docker-build docker-stop docker-legacy lint fmt check dev lab health status
 
 GO ?= go
 DOCKER ?= docker
@@ -13,14 +13,14 @@ help:
 	@echo "PhantomProxy - Go developer commands"
 	@echo ""
 	@echo "  make install       - Download Go module dependencies"
-	@echo "  make build         - Build the canonical Go entrypoint"
-	@echo "  make run           - Build and run the Go entrypoint"
+	@echo "  make build         - Build the existing Go entrypoint"
+	@echo "  make run           - Build and run the existing Go entrypoint"
+	@echo "  make lab           - Run the safe, local-only simulation lab"
 	@echo "  make test          - Run Go tests with race detection"
-	@echo "  make test-go       - Alias for Go tests"
 	@echo "  make lint          - Run go vet"
 	@echo "  make fmt           - Format Go sources"
-	@echo "  make check         - Run formatting check, vet, tests and build"
-	@echo "  make docker-build  - Build the Go Docker image"
+	@echo "  make check         - Run formatting, vet, tests and build"
+	@echo "  make docker-build  - Build the current Go Docker image"
 	@echo "  make docker-legacy - Start the legacy multi-runtime Compose stack"
 	@echo "  make docker-stop   - Stop the legacy Compose stack"
 	@echo "  make clean         - Remove local build artifacts"
@@ -41,6 +41,9 @@ build:
 
 run: build
 	@./$(BINARY) --config config.yaml
+
+lab:
+	@$(GO) run ./cmd/simulation-lab
 
 test: test-go
 
