@@ -15,7 +15,7 @@ type eventRequest struct {
 	Type          string `json:"type"`
 }
 
-// Handler exposes only health, event listing, and synthetic event ingestion.
+// Handler exposes health, status, emergency stop, and synthetic-event endpoints.
 func Handler(store *Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
@@ -23,7 +23,31 @@ func Handler(store *Store) http.Handler {
 			methodNotAllowed(w, http.MethodGet)
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+		status := http.StatusOK
+		if store.IsStopped() {
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(w, status, map[string]any{"status": map[bool]string{true: "stopped", false: "ok"}[store.IsStopped()]})
+	})
+
+	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"stopped": store.IsStopped(),
+			"events":  len(store.List(500)),
+		})
+	})
+
+	mux.HandleFunc("/admin/stop", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w, http.MethodPost)
+			return
+		}
+		store.Stop()
+		writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 	})
 
 	mux.HandleFunc("/api/v1/events", func(w http.ResponseWriter, r *http.Request) {
@@ -57,10 +81,17 @@ func Handler(store *Store) http.Handler {
 			if err != nil {
 				status := http.StatusBadRequest
 				message := "invalid event"
-				if errors.Is(err, ErrInvalidID) {
+				switch {
+				case errors.Is(err, ErrInvalidID):
 					message = "campaign_id and participant_id must use 1-64 letters, digits, underscores, or hyphens"
-				} else if errors.Is(err, ErrInvalidEvent) {
+				case errors.Is(err, ErrInvalidEvent):
 					message = "type must be visit, click, or training_complete"
+				case errors.Is(err, ErrCampaignNotInScope):
+					status = http.StatusForbidden
+					message = "campaign is not in the explicit simulation allowlist"
+				case errors.Is(err, ErrLabStopped):
+					status = http.StatusServiceUnavailable
+					message = "simulation lab is stopped"
 				}
 				writeJSON(w, status, map[string]string{"error": message})
 				return
