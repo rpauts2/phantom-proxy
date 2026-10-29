@@ -84,3 +84,25 @@ func TestHandlerEmergencyStopRejectsNewEvents(t *testing.T) {
 		t.Fatalf("health after stop status = %d, want %d", res.Code, http.StatusServiceUnavailable)
 	}
 }
+
+func TestDashboardServesStaticAssetsWithSecurityHeaders(t *testing.T) {
+	handler := Handler(NewStore(10, "demo"))
+	for _, path := range []string{"/", "/style.css", "/app.js"} {
+		res := httptest.NewRecorder()
+		handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, path, nil))
+		if res.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d, want %d", path, res.Code, http.StatusOK)
+		}
+		if res.Header().Get("Content-Security-Policy") == "" {
+			t.Fatalf("GET %s missing Content-Security-Policy", path)
+		}
+		if res.Body.Len() == 0 {
+			t.Fatalf("GET %s returned empty body", path)
+		}
+	}
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/unknown-route", nil))
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("unknown route status = %d, want %d", res.Code, http.StatusNotFound)
+	}
+}
