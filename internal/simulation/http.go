@@ -88,10 +88,10 @@ func Handler(store *Store) http.Handler {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"retained_events": len(events),
-			"by_type": byType,
-			"by_campaign": byCampaign,
-			"stopped": store.IsStopped(),
-			"scope_expired": store.IsScopeExpired(),
+			"by_type":         byType,
+			"by_campaign":     byCampaign,
+			"stopped":         store.IsStopped(),
+			"scope_expired":   store.IsScopeExpired(),
 		})
 	})
 
