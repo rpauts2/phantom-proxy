@@ -102,5 +102,8 @@ coverage/
 coverage.txt
 *.cover
 
+# Local simulation lab data
+.phantom-lab/
+
 # Stakpak session files
 .stakpak/session*
