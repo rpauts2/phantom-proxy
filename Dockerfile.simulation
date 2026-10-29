@@ -2,7 +2,6 @@
 FROM golang:1.24.0-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
 COPY cmd/simulation-lab ./cmd/simulation-lab
 COPY internal/simulation ./internal/simulation
 RUN CGO_ENABLED=0 go test ./internal/simulation
