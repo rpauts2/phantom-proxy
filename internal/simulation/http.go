@@ -212,6 +212,9 @@ func Handler(store *Store) http.Handler {
 				case errors.Is(err, ErrScopeExpired):
 					status = http.StatusGone
 					message = "simulation scope has expired; restart with a new explicit scope"
+				case errors.Is(err, ErrPersistence):
+					status = http.StatusInternalServerError
+					message = "event could not be saved; no event was accepted"
 				}
 				writeJSON(w, status, map[string]string{"error": message})
 				return
