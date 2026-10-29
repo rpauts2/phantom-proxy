@@ -134,7 +134,7 @@ func TestPersistentStoreRollsBackEventWhenSnapshotWriteFails(t *testing.T) {
 
 func TestPersistentStoreRejectsUnknownFieldsAndTrailingJSON(t *testing.T) {
 	for name, snapshot := range map[string]string{
-		"unknown field": `{"version":1,"next_sequence":0,"stopped":false,"campaign_ids":["demo"],"events":[],"password":"unexpected"}`,
+		"unknown field":   `{"version":1,"next_sequence":0,"stopped":false,"campaign_ids":["demo"],"events":[],"password":"unexpected"}`,
 		"trailing object": `{"version":1,"next_sequence":0,"stopped":false,"campaign_ids":["demo"],"events":[]} {}`,
 	} {
 		t.Run(name, func(t *testing.T) {
