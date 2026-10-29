@@ -3,6 +3,7 @@ package simulation
 import (
 	"errors"
 	"testing"
+	"time"
 )
 
 func TestStoreValidatesAndBoundsEvents(t *testing.T) {
@@ -63,5 +64,15 @@ func TestStoreRequiresExplicitAllowlistAndSupportsEmergencyStop(t *testing.T) {
 	}
 	if _, err := store.Add("demo", "person", "click"); !errors.Is(err, ErrLabStopped) {
 		t.Fatalf("expected emergency stop to reject event, got %v", err)
+	}
+}
+
+func TestStoreRejectsExpiredScope(t *testing.T) {
+	store := NewStoreWithExpiry(10, time.Now().Add(-time.Second), "demo")
+	if _, err := store.Add("demo", "person", "visit"); !errors.Is(err, ErrScopeExpired) {
+		t.Fatalf("expected expired scope error, got %v", err)
+	}
+	if !store.IsScopeExpired() {
+		t.Fatal("expired scope should report expired state")
 	}
 }
