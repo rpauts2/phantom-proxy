@@ -34,13 +34,13 @@ type Event struct {
 
 // Store keeps a bounded in-memory history of synthetic training events.
 type Store struct {
-	mu        sync.RWMutex
-	max       int
-	nextID    uint64
-	events    []Event
-	allowlist     map[string]struct{}
+	mu             sync.RWMutex
+	max            int
+	nextID         uint64
+	events         []Event
+	allowlist      map[string]struct{}
 	scopeExpiresAt time.Time
-	stopped       bool
+	stopped        bool
 }
 
 // NewStore requires an explicit campaign allowlist. With no IDs, all ingestion is denied.
