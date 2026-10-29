@@ -14,6 +14,7 @@ func TestHandlerAcceptsOnlySyntheticEventSchema(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
 		`{"campaign_id":"demo","participant_id":"person_1","type":"click"}`,
 	))
+	req.Header.Set("X-Phantom-Lab-Request", "1")
 	res := httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusCreated {
@@ -26,6 +27,7 @@ func TestHandlerAcceptsOnlySyntheticEventSchema(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
 		`{"campaign_id":"demo","participant_id":"person_1","type":"click","password":"secret"}`,
 	))
+	req.Header.Set("X-Phantom-Lab-Request", "1")
 	res = httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
@@ -64,7 +66,9 @@ func TestHandlerEmergencyStopRejectsNewEvents(t *testing.T) {
 	handler := Handler(NewStore(10, "demo"))
 
 	res := httptest.NewRecorder()
-	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/admin/stop", nil))
+	stopReq := httptest.NewRequest(http.MethodPost, "/admin/stop", nil)
+	stopReq.Header.Set("X-Phantom-Lab-Action", "stop")
+	handler.ServeHTTP(res, stopReq)
 	if res.Code != http.StatusOK {
 		t.Fatalf("stop status = %d, want %d", res.Code, http.StatusOK)
 	}
@@ -72,6 +76,7 @@ func TestHandlerEmergencyStopRejectsNewEvents(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
 		`{"campaign_id":"demo","participant_id":"person_1","type":"visit"}`,
 	))
+	req.Header.Set("X-Phantom-Lab-Request", "1")
 	res = httptest.NewRecorder()
 	handler.ServeHTTP(res, req)
 	if res.Code != http.StatusServiceUnavailable {
