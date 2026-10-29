@@ -1,0 +1,16 @@
+# Standalone Go-only build for the safe simulation lab.
+FROM golang:1.24.0-alpine AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY cmd/simulation-lab ./cmd/simulation-lab
+COPY internal/simulation ./internal/simulation
+RUN CGO_ENABLED=0 go test ./internal/simulation
+RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/simulation-lab ./cmd/simulation-lab
+
+# No shell, package manager, config.yaml, or legacy service files in runtime image.
+FROM scratch
+COPY --from=build /out/simulation-lab /simulation-lab
+USER 65532:65532
+ENTRYPOINT ["/simulation-lab"]
+CMD ["-campaigns", "demo"]
