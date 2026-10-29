@@ -4,12 +4,12 @@ WORKDIR /src
 COPY go.mod go.sum ./
 COPY cmd/simulation-lab ./cmd/simulation-lab
 COPY internal/simulation ./internal/simulation
-RUN CGO_ENABLED=0 go test ./internal/simulation
+RUN mkdir -p /out /data && chmod 700 /data\nRUN CGO_ENABLED=0 go test ./internal/simulation
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/simulation-lab ./cmd/simulation-lab
 
 # No shell, package manager, config.yaml, or legacy service files in runtime image.
 FROM scratch
-COPY --from=build /out/simulation-lab /simulation-lab
+COPY --from=build /out/simulation-lab /simulation-lab\nCOPY --from=build --chown=65532:65532 --chmod=700 /data /data
 USER 65532:65532
 ENTRYPOINT ["/simulation-lab"]
-CMD ["-campaigns", "demo"]
+CMD ["-campaigns", "demo", "-data", "/data/events.json"]
