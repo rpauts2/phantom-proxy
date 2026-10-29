@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: go-validation-${{ github.ref }}
+  group: go-validation-safe-lab-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
