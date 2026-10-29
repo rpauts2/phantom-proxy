@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 func TestHandlerAcceptsOnlySyntheticEventSchema(t *testing.T) {
@@ -109,5 +110,36 @@ func TestDashboardServesStaticAssetsWithSecurityHeaders(t *testing.T) {
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/unknown-route", nil))
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("unknown route status = %d, want %d", res.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandlerRejectsExpiredScopeAndMissingWriteHeader(t *testing.T) {
+	expired := NewStoreWithExpiry(10, time.Now().Add(-time.Second), "demo")
+	handler := Handler(expired)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
+		`{"campaign_id":"demo","participant_id":"person_01","type":"visit"}`,
+	))
+	req.Header.Set("X-Phantom-Lab-Request", "1")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusGone {
+		t.Fatalf("expired scope POST status = %d, want %d", res.Code, http.StatusGone)
+	}
+
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if res.Code != http.StatusGone {
+		t.Fatalf("expired scope health status = %d, want %d", res.Code, http.StatusGone)
+	}
+
+	active := Handler(NewStore(10, "demo"))
+	req = httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
+		`{"campaign_id":"demo","participant_id":"person_01","type":"visit"}`,
+	))
+	res = httptest.NewRecorder()
+	active.ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("POST without local request header status = %d, want %d", res.Code, http.StatusForbidden)
 	}
 }
