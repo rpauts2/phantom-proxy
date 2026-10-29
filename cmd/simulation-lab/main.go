@@ -18,6 +18,7 @@ import (
 
 func main() {
 	addr := flag.String("addr", "127.0.0.1:8088", "HTTP listen address (must be a loopback IP)")
+	dataPath := flag.String("data", ".phantom-lab/events.json", "path to the local synthetic-event snapshot")
 	campaigns := flag.String("campaigns", "", "comma-separated explicit allowlist of synthetic campaign IDs (required)")
 	scopeDuration := flag.Duration("scope-duration", 8*time.Hour, "maximum simulation scope lifetime (1m to 24h)")
 	flag.Parse()
@@ -48,10 +49,14 @@ func main() {
 		log.Fatal("scope duration must be between 1m and 24h")
 	}
 	scopeExpiresAt := time.Now().Add(*scopeDuration)
+	store, err := simulation.OpenPersistentStore(*dataPath, 500, scopeExpiresAt, allowlist...)
+	if err != nil {
+		log.Fatalf("open persistent simulation store: %v", err)
+	}
 
 	server := &http.Server{
 		Addr:              *addr,
-		Handler:           simulation.Handler(simulation.NewStoreWithExpiry(500, scopeExpiresAt, allowlist...)),
+		Handler:           simulation.Handler(store),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      10 * time.Second,
@@ -64,7 +69,8 @@ func main() {
 	go func() {
 		log.Printf("simulation lab listening on http://%s", *addr)
 		log.Printf("allowed synthetic campaign IDs: %s", strings.Join(allowlist, ","))
-		log.Printf("simulation scope expires at %s", scopeExpiresAt.UTC().Format(time.RFC3339))
+		log.Printf("simulation scope expires at %s", store.ScopeExpiresAt().UTC().Format(time.RFC3339))
+		log.Printf("synthetic event snapshot: %s", *dataPath)
 		log.Printf("synthetic events only; no credential or session data is accepted")
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Printf("server error: %v", err)
