@@ -143,3 +143,32 @@ func TestHandlerRejectsExpiredScopeAndMissingWriteHeader(t *testing.T) {
 		t.Fatalf("POST without local request header status = %d, want %d", res.Code, http.StatusForbidden)
 	}
 }
+
+func TestMetricsEndpointReportsOnlyBoundedSyntheticCounters(t *testing.T) {
+	store := NewStore(3, "demo")
+	_, _ = store.Add("demo", "person_01", "visit")
+	_, _ = store.Add("demo", "person_02", "click")
+	handler := Handler(store)
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("metrics status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if got := res.Header().Get("Content-Type"); got != "text/plain; version=0.0.4; charset=utf-8" {
+		t.Fatalf("unexpected metrics content type: %q", got)
+	}
+	for _, expected := range []string{
+		"phantom_lab_events_retained 2",
+		"phantom_lab_events_by_type_retained{type=\"visit\"} 1",
+		"phantom_lab_events_by_type_retained{type=\"click\"} 1",
+		"phantom_lab_scope_expired 0",
+	} {
+		if !bytes.Contains(res.Body.Bytes(), []byte(expected)) {
+			t.Fatalf("metrics response missing %q: %s", expected, res.Body.String())
+		}
+	}
+	if bytes.Contains(res.Body.Bytes(), []byte(`\n`)) {
+		t.Fatal("metrics output contains literal escaped newlines instead of line breaks")
+	}
+}
