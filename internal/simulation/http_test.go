@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -252,5 +254,29 @@ func TestSummaryEndpointRejectsNonGet(t *testing.T) {
 	Handler(NewStore(10, "demo")).ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/api/v1/summary", nil))
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("summary POST status = %d, want %d", res.Code, http.StatusMethodNotAllowed)
+	}
+}
+
+func TestHandlerReportsPersistenceFailureAsServerError(t *testing.T) {
+	dir := t.TempDir()
+	store := NewStore(10, "demo")
+	// Replacing a directory with the snapshot file must fail, exercising the
+	// durable-write error path without relying on filesystem permissions.
+	store.persistencePath = filepath.Join(dir, "snapshot-target")
+	if err := os.Mkdir(store.persistencePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	handler := Handler(store)
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
+		`{"campaign_id":"demo","participant_id":"person_01","type":"visit"}`,
+	))
+	req.Header.Set("X-Phantom-Lab-Request", "1")
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("persistence failure status = %d, want %d: %s", res.Code, http.StatusInternalServerError, res.Body.String())
+	}
+	if got := len(store.List(10)); got != 0 {
+		t.Fatalf("event count after failed persistence = %d, want 0", got)
 	}
 }
