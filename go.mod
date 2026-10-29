@@ -2,7 +2,7 @@
 
 module github.com/phantom-proxy/phantom-proxy
 
-// Go 1.21+ required
+// Go 1.24+ required
 go 1.24.0
 
 require (
