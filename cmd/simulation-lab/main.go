@@ -5,7 +5,6 @@ import (
 	"context"
 	"flag"
 	"log"
-	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -23,30 +22,15 @@ func main() {
 	scopeDuration := flag.Duration("scope-duration", 8*time.Hour, "maximum simulation scope lifetime (1m to 24h)")
 	flag.Parse()
 
-	host, _, err := net.SplitHostPort(*addr)
+	if err := validateListenAddress(*addr); err != nil {
+		log.Fatal(err)
+	}
+	allowlist, err := parseCampaignAllowlist(*campaigns)
 	if err != nil {
-		log.Fatalf("invalid listen address: %v", err)
+		log.Fatal(err)
 	}
-	ip := net.ParseIP(host)
-	if ip == nil || !ip.IsLoopback() {
-		log.Fatal("simulation lab only binds to a loopback IP; use 127.0.0.1 or ::1")
-	}
-
-	allowlist := make([]string, 0)
-	for _, id := range strings.Split(*campaigns, ",") {
-		id = strings.TrimSpace(id)
-		if id != "" {
-			if !simulation.ValidID(id) {
-				log.Fatalf("invalid synthetic campaign ID %q: use 1-64 letters, digits, underscores, or hyphens", id)
-			}
-			allowlist = append(allowlist, id)
-		}
-	}
-	if len(allowlist) == 0 {
-		log.Fatal("an explicit campaign allowlist is required: use -campaigns demo")
-	}
-	if *scopeDuration < time.Minute || *scopeDuration > 24*time.Hour {
-		log.Fatal("scope duration must be between 1m and 24h")
+	if err := validateScopeDuration(*scopeDuration); err != nil {
+		log.Fatal(err)
 	}
 	scopeExpiresAt := time.Now().Add(*scopeDuration)
 	store, err := simulation.OpenPersistentStore(*dataPath, 500, scopeExpiresAt, allowlist...)
