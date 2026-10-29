@@ -10,14 +10,14 @@ import (
 )
 
 var (
-	ErrInvalidID       = errors.New("invalid campaign or participant id")
-	ErrInvalidEvent    = errors.New("unsupported simulation event type")
+	ErrInvalidID          = errors.New("invalid campaign or participant id")
+	ErrInvalidEvent       = errors.New("unsupported simulation event type")
 	ErrCampaignNotInScope = errors.New("campaign is not in the explicit simulation allowlist")
-	ErrLabStopped      = errors.New("simulation lab is stopped")
-	idPattern          = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
-	allowedEvents      = map[string]struct{}{
+	ErrLabStopped         = errors.New("simulation lab is stopped")
+	idPattern             = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,64}$`)
+	allowedEvents         = map[string]struct{}{
 		"visit":             {},
-		"click":             {},
+		"click":              {},
 		"training_complete": {},
 	}
 )
