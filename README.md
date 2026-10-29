@@ -53,6 +53,7 @@ make lab LAB_CAMPAIGNS=demo,training SCOPE_DURATION=4h
 |---|---|---|
 | `GET` | `/` | Панель управления |
 | `GET` | `/healthz` | Состояние процесса и области тестирования |
+| `GET` | `/metrics` | Метрики для Prometheus |
 | `GET` | `/api/v1/status` | Состояние, срок действия области, число событий |
 | `GET` | `/api/v1/events` | Последние синтетические события |
 | `POST` | `/api/v1/events` | Добавить разрешённое синтетическое событие |
