@@ -1,6 +1,7 @@
 package simulation
 
 import (
+	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type eventRequest struct {
@@ -101,6 +103,40 @@ func Handler(store *Store) http.Handler {
 		}
 		store.Stop()
 		writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
+	})
+
+	mux.HandleFunc("/api/v1/events.csv", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			methodNotAllowed(w, http.MethodGet)
+			return
+		}
+		limit := 500
+		if raw := r.URL.Query().Get("limit"); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 || n > 500 {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "limit must be between 1 and 500"})
+				return
+			}
+			limit = n
+		}
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", "attachment; filename=phantom-lab-events.csv")
+		writer := csv.NewWriter(w)
+		if err := writer.Write([]string{"sequence", "campaign_id", "participant_id", "type", "occurred_at"}); err != nil {
+			return
+		}
+		for _, event := range store.List(limit) {
+			if err := writer.Write([]string{
+				strconv.FormatUint(event.Sequence, 10),
+				event.CampaignID,
+				event.ParticipantID,
+				event.Type,
+				event.OccurredAt.UTC().Format(time.RFC3339Nano),
+			}); err != nil {
+				return
+			}
+		}
+		writer.Flush()
 	})
 
 	mux.HandleFunc("/api/v1/events", func(w http.ResponseWriter, r *http.Request) {
