@@ -35,11 +35,11 @@ type Event struct {
 
 // Store keeps a bounded in-memory history of synthetic training events.
 type Store struct {
-	mu             sync.RWMutex
-	max            int
-	nextID         uint64
-	events         []Event
-	allowlist      map[string]struct{}
+	mu              sync.RWMutex
+	max             int
+	nextID          uint64
+	events          []Event
+	allowlist       map[string]struct{}
 	scopeExpiresAt  time.Time
 	stopped         bool
 	persistencePath string
