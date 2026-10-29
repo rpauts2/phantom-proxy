@@ -9,7 +9,7 @@ import (
 )
 
 func TestHandlerAcceptsOnlySyntheticEventSchema(t *testing.T) {
-	handler := Handler(NewStore(10))
+	handler := Handler(NewStore(10, "demo"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
 		`{"campaign_id":"demo","participant_id":"person_1","type":"click"}`,
@@ -34,7 +34,7 @@ func TestHandlerAcceptsOnlySyntheticEventSchema(t *testing.T) {
 }
 
 func TestHandlerListsEventsAndHealth(t *testing.T) {
-	store := NewStore(10)
+	store := NewStore(10, "demo")
 	_, _ = store.Add("demo", "person_1", "visit")
 	handler := Handler(store)
 
@@ -57,5 +57,30 @@ func TestHandlerListsEventsAndHealth(t *testing.T) {
 	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 	if res.Code != http.StatusOK {
 		t.Fatalf("health status = %d, want %d", res.Code, http.StatusOK)
+	}
+}
+
+func TestHandlerEmergencyStopRejectsNewEvents(t *testing.T) {
+	handler := Handler(NewStore(10, "demo"))
+
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodPost, "/admin/stop", nil))
+	if res.Code != http.StatusOK {
+		t.Fatalf("stop status = %d, want %d", res.Code, http.StatusOK)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", bytes.NewBufferString(
+		`{"campaign_id":"demo","participant_id":"person_1","type":"visit"}`,
+	))
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("event after stop status = %d, want %d", res.Code, http.StatusServiceUnavailable)
+	}
+
+	res = httptest.NewRecorder()
+	handler.ServeHTTP(res, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("health after stop status = %d, want %d", res.Code, http.StatusServiceUnavailable)
 	}
 }
