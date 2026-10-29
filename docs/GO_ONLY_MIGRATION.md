@@ -6,6 +6,8 @@ The repository is **not yet a pure-Go application**. The Go module is present, b
 
 This plan deliberately leaves `config.yaml` unchanged, as requested.
 
+A first isolated Go-only component now exists at `cmd/simulation-lab` with its event store and HTTP API in `internal/simulation`. It binds to a loopback IP only, stores a bounded in-memory history, accepts only `visit`, `click`, and `training_complete` events, and rejects unknown JSON fields. It is a safe prototype, not yet a replacement for the existing application. Repository tests have been added, but could not be executed from the current environment because GitHub could not be reached from the local shell.
+
 ## Target
 
 One Go runtime and one canonical Go entrypoint for the application. External infrastructure such as a database or a separately installed local model may remain optional adapters, but no Python, Node.js, or Celery process should be required to build, run, test, or administer the core application.
@@ -49,3 +51,25 @@ One Go runtime and one canonical Go entrypoint for the application. External inf
 - Legacy Compose services are either removed or clearly optional and no longer presented as part of the Go-only product.
 - Tests demonstrate that simulation scope restrictions and shutdown behavior work.
 - No claim of full Go-only status is made until the above checks have actually passed.
+
+## Run the safe simulation prototype
+
+```sh
+make lab
+```
+
+The service listens on `127.0.0.1:8088` by default and refuses non-loopback bind addresses.
+
+- `GET /healthz`: process health.
+- `GET /api/v1/events`: recent synthetic events.
+- `POST /api/v1/events`: add an event with `campaign_id`, `participant_id`, and `type`. The only accepted event types are `visit`, `click`, and `training_complete`.
+
+Example event:
+
+```sh
+curl -X POST http://127.0.0.1:8088/api/v1/events \
+  -H 'Content-Type: application/json' \
+  -d '{"campaign_id":"demo","participant_id":"person_01","type":"click"}'
+```
+
+Events are held in memory and disappear when the process exits. This prototype intentionally does not collect credentials, cookies, tokens, arbitrary payloads, or external redirect targets.
